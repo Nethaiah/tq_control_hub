@@ -1,0 +1,12 @@
+import { cookies } from "next/headers"
+import { redirect } from "next/navigation"
+
+import { createClient } from "@/lib/supabase/server"
+
+export async function GET() {
+  const cookieStore = await cookies()
+  const supabase = createClient(cookieStore)
+
+  await supabase.auth.signOut()
+  redirect("/login")
+}

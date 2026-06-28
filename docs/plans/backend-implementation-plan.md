@@ -173,13 +173,13 @@ drizzle/
   schema.ts
   migrations/
 drizzle.config.ts
-middleware.ts
+proxy.ts
 BACKEND_DECISION_LOG.md
 ```
 
 Notes:
 
-- `src/lib/db/schema.ts` can re-export from `drizzle/schema.ts` or vice versa. Pick one source of truth before coding.
+- `src/lib/db/schema.ts` can re-export from `drizzle/schema.ts` or vice versa. Pick one source of truth before coding. I choose the `src/lib/db/schema.ts`.
 - Route handlers should not contain long SQL. Keep queries in `src/lib/db/queries/*` and mutations in `src/lib/db/mutations/*`.
 - API routes validate input with Zod before calling Drizzle.
 

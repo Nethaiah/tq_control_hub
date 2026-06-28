@@ -1,10 +1,22 @@
 import { Suspense, type ReactNode } from "react"
+import { redirect } from "next/navigation"
 
 import { WorkspaceHeader } from "@/components/app-shell/workspace-header"
 import { WorkspaceSidebar } from "@/components/app-shell/workspace-sidebar"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { getOptionalAuthContext } from "@/lib/api/auth"
 
-export default function WorkspaceLayout({ children }: { children: ReactNode }) {
+export default async function WorkspaceLayout({ children }: { children: ReactNode }) {
+  const context = await getOptionalAuthContext()
+
+  if (!context) {
+    redirect("/login")
+  }
+
+  if (!context.membership) {
+    redirect("/pending-access")
+  }
+
   return (
     <SidebarProvider
       style={

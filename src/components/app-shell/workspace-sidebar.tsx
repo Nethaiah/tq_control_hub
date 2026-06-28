@@ -9,6 +9,7 @@ import {
   FileSpreadsheetIcon,
   ImportIcon,
   LayoutDashboardIcon,
+  LogOutIcon,
   Settings2Icon,
   SlidersHorizontalIcon,
   UsersIcon,
@@ -94,6 +95,14 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
             Ledger-backed decisions. AI drafts only.
           </div>
         </div>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton render={<Link href="/logout" />}>
+              <LogOutIcon />
+              <span>Sign out</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
   )
