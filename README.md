@@ -32,7 +32,6 @@ Internal owner cockpit for revenue, expenses, people, departments, CSV imports, 
 pnpm install
 cp .env.example .env
 pnpm db:migrate
-pnpm db:seed
 pnpm dev
 ```
 
@@ -45,9 +44,7 @@ pnpm build
 pnpm lint
 pnpm db:generate
 pnpm db:migrate
-pnpm db:seed
 pnpm db:rls-smoke
-pnpm fixtures:csv
 ```
 
 ## Demo Path

@@ -32,7 +32,6 @@ Supabase (Postgres + Auth + RLS), Drizzle ORM, Next.js 16 App Router, TanStack Q
 pnpm install
 cp .env.example .env
 pnpm db:migrate
-pnpm db:seed
 pnpm dev
 ```
 
