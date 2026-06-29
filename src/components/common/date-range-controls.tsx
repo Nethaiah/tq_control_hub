@@ -21,9 +21,19 @@ import { DatePicker } from "./date-picker"
 export function DateRangeControls() {
   const { filters, setFilters } = useUrlFilters()
   const [open, setOpen] = React.useState(false)
+  const [draftFrom, setDraftFrom] = React.useState(filters.from ?? "")
+  const [draftTo, setDraftTo] = React.useState(filters.to ?? "")
 
-  function apply(patch: Parameters<typeof setFilters>[0]) {
-    setFilters(patch)
+  React.useEffect(() => {
+    if (open) {
+      setDraftFrom(filters.from ?? "")
+      setDraftTo(filters.to ?? "")
+    }
+  }, [open, filters.from, filters.to])
+
+  function save() {
+    setFilters({ from: draftFrom || undefined, to: draftTo || undefined, ids: undefined })
+    setOpen(false)
   }
 
   const label = filters.from && filters.to
@@ -54,34 +64,41 @@ export function DateRangeControls() {
             <Field>
               <FieldLabel htmlFor="dashboard-from">From</FieldLabel>
               <DatePicker
-                value={filters.from ?? ""}
-                onChange={(value) => apply({ from: value || undefined, ids: undefined })}
+                value={draftFrom}
+                onChange={(value) => setDraftFrom(value ?? "")}
               />
             </Field>
             <Field>
               <FieldLabel htmlFor="dashboard-to">To</FieldLabel>
               <DatePicker
-                value={filters.to ?? ""}
-                onChange={(value) => apply({ to: value || undefined, ids: undefined })}
+                value={draftTo}
+                onChange={(value) => setDraftTo(value ?? "")}
               />
             </Field>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
-              onClick={() => apply({ ...DEFAULT_MONTH_FILTERS, ids: undefined })}
+              onClick={() => {
+                setDraftFrom(DEFAULT_MONTH_FILTERS.from ?? "")
+                setDraftTo(DEFAULT_MONTH_FILTERS.to ?? "")
+              }}
             >
               <CalendarDaysIcon data-icon="inline-start" />
               June view
             </Button>
             <Button
               variant="ghost"
-              onClick={() => apply({ from: "2026-04-01", to: "2026-07-31", ids: undefined })}
+              onClick={() => {
+                setDraftFrom("2026-04-01")
+                setDraftTo("2026-07-31")
+              }}
             >
               <RotateCcwIcon data-icon="inline-start" />
               All seeded dates
             </Button>
           </div>
+          <Button onClick={save}>Save</Button>
         </div>
       </DialogContent>
     </Dialog>

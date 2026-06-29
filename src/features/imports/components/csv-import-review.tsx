@@ -130,7 +130,6 @@ export function CsvImportReview() {
   const activeImport = (importId ? imports.find((item) => item.id === importId) : null) ?? imports[0] ?? null
   const isActiveImportCommitted = activeImport?.status === "committed"
   const isActiveImportReviewable = activeImport?.status === "needs_review" || activeImport?.status === "staged"
-  const [stagedReviewDraft, setStagedReviewDraft] = React.useState<CsvStagedRow["reviewState"] | null>(stagedReviewState)
   const stagedRowsQuery = useStagedRows(activeImport?.id, {
     page: stagedPage,
     pageSize: stagedPageSize,
@@ -176,10 +175,6 @@ export function CsvImportReview() {
   )
   const pageCount = stagedRowsData?.pagination.totalPages ?? 1
   const totalRows = stagedRowsData?.pagination.totalRows ?? 0
-
-  React.useEffect(() => {
-    setStagedReviewDraft(stagedReviewState)
-  }, [stagedReviewState])
 
   function saveMapping(values: CsvMappingFormValues) {
     toast.success("Mapping ready for the next upload", {
@@ -714,16 +709,16 @@ export function CsvImportReview() {
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground">Review filter</span>
               <Select
-                value={stagedReviewDraft ?? "all"}
-                onValueChange={(value) => setStagedReviewDraft(value === "all" ? null : value as CsvStagedRow["reviewState"])}
+                value={stagedReviewState ?? "all"}
+                onValueChange={(value) => setStagedReviewState(value === "all" ? null : value as CsvStagedRow["reviewState"])}
               >
                 <SelectTrigger className="h-8 w-40" aria-label="Review state filter">
                   <StagedSelectValue>
-                    {stagedReviewDraft === "approved"
+                    {stagedReviewState === "approved"
                       ? "Approved"
-                      : stagedReviewDraft === "needs_human"
+                      : stagedReviewState === "needs_human"
                         ? "Needs human"
-                        : stagedReviewDraft === "blocked"
+                        : stagedReviewState === "blocked"
                           ? "Blocked"
                           : "All rows"}
                   </StagedSelectValue>
@@ -737,12 +732,6 @@ export function CsvImportReview() {
                   </SelectGroup>
                 </SelectContent>
               </Select>
-              <Button type="button" variant="outline" size="sm" onClick={() => setStagedReviewDraft(null)}>
-                Clear
-              </Button>
-              <Button type="button" size="sm" onClick={() => setStagedReviewState(stagedReviewDraft)}>
-                Save
-              </Button>
             </div>
           </div>
           {isActiveImportCommitted ? (

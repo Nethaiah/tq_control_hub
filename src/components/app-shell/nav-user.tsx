@@ -8,7 +8,6 @@ import {
   MoreVerticalIcon,
   SunIcon,
   SunMoonIcon,
-  UserCircleIcon,
 } from "lucide-react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -101,13 +100,6 @@ export function NavUser({ user }: NavUserProps) {
                 </span>
               </div>
             </div>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem render={<Link href="/settings" />}>
-                <UserCircleIcon />
-                Account
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuLabel>Theme</DropdownMenuLabel>
