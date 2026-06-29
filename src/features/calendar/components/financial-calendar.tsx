@@ -103,6 +103,10 @@ export function FinancialCalendar({ metrics }: { metrics: CalendarMetrics }) {
           </>
         }
       />
+      <div className="rounded-md border border-dashed bg-muted/35 p-3 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">MVP note: </span>
+        Events from recurring templates are read-time projections only. They do not create real calendar events or ledger rows yet. Automation, approval flows, and event persistence will come in a later phase.
+      </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader>

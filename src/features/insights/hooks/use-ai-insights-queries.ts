@@ -116,3 +116,45 @@ export function useUpdateAiSuggestion() {
     },
   })
 }
+
+export function useGenerateBriefing() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/ai/briefing", {
+        credentials: "same-origin",
+        method: "POST",
+      })
+
+      return readApiResponse<{ suggestion: AiSuggestion }>(response, "Unable to generate briefing")
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<AiSuggestion[]>(aiSuggestionsQueryKey, (current) => [
+        data.suggestion,
+        ...(current?.filter((item) => item.id !== data.suggestion.id) ?? []),
+      ])
+    },
+  })
+}
+
+export function useGenerateForecast() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/ai/forecast", {
+        credentials: "same-origin",
+        method: "POST",
+      })
+
+      return readApiResponse<{ suggestion: AiSuggestion }>(response, "Unable to generate forecast")
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<AiSuggestion[]>(aiSuggestionsQueryKey, (current) => [
+        data.suggestion,
+        ...(current?.filter((item) => item.id !== data.suggestion.id) ?? []),
+      ])
+    },
+  })
+}

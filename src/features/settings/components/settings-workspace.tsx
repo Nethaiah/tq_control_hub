@@ -192,6 +192,15 @@ function departmentSummary(departments: SettingsDepartment[], role: MemberRole, 
   return `${selected.length} departments`
 }
 
+function MvpNote({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-md border border-dashed bg-muted/35 p-3 text-xs text-muted-foreground">
+      <span className="font-medium text-foreground">MVP note: </span>
+      {children}
+    </div>
+  )
+}
+
 function updateMemberInCache(queryClient: ReturnType<typeof useQueryClient>, member: SettingsMember) {
   queryClient.setQueryData<SettingsMembersData>(settingsMembersQueryKey, (current) =>
     current
@@ -856,9 +865,14 @@ export function SettingsWorkspace({
       <Card>
         <CardHeader>
           <CardTitle>Integrations</CardTitle>
-          <CardDescription>Connected source placeholders for the future Supabase, n8n, and external-source implementation.</CardDescription>
+          <CardDescription>Connected source cards for future Supabase, n8n, and external-source implementation.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="md:col-span-2 xl:col-span-3">
+            <MvpNote>
+              These cards document intended connections and policies, but they do not connect live accounts yet. Next: add connector auth, sync status, failures, and audit history.
+            </MvpNote>
+          </div>
           {operationalIntegrations.map((integration) => (
             <div key={integration.id} className="rounded-lg border p-3">
               <div className="flex items-start justify-between gap-3">
@@ -890,6 +904,11 @@ export function SettingsWorkspace({
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="md:col-span-2 xl:col-span-3">
+            <MvpNote>
+              This is a frontend runbook, not a live automation runner. Next: wire n8n executions to staged records, notifications, retry handling, and owner approvals.
+            </MvpNote>
+          </div>
           {automationWorkflows.map((workflow) => (
             <div key={workflow.name} className="min-w-0 rounded-lg border p-3">
               <div className="flex items-start justify-between gap-3">

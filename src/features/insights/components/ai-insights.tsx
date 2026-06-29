@@ -5,7 +5,7 @@ import * as React from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
-import { BotIcon, CheckIcon, FileTextIcon, FilterIcon, LineChartIcon, ScanTextIcon, XIcon } from "lucide-react"
+import { BotIcon, CheckIcon, FileTextIcon, FilterIcon, LineChartIcon, Loader2Icon, ScanTextIcon, XIcon } from "lucide-react"
 
 import { HelpDialog } from "@/components/common/help-dialog"
 import { PageHeader, PageShell } from "@/components/common/page-shell"
@@ -22,6 +22,8 @@ import {
   type AiQueryResult,
   type AiQuerySourceRow,
   useAiSuggestions,
+  useGenerateBriefing,
+  useGenerateForecast,
   useRunAiQuery,
   useUpdateAiSuggestion,
 } from "@/features/insights/hooks/use-ai-insights-queries"
@@ -48,10 +50,14 @@ function AiFeaturePanel({
   feature,
   items,
   onUpdate,
+  actions,
+  emptyNote,
 }: {
   feature: "briefing" | "forecast" | "ocr"
   items: AiSuggestion[]
   onUpdate: (id: string, reviewState: AiSuggestion["reviewState"]) => void
+  actions?: React.ReactNode
+  emptyNote?: React.ReactNode
 }) {
   const copy = aiFeatureCopy[feature]
   const Icon = copy.icon
@@ -64,8 +70,14 @@ function AiFeaturePanel({
           {copy.title}
         </CardTitle>
         <CardDescription>{copy.description}</CardDescription>
+        {actions ? <div className="mt-2">{actions}</div> : null}
       </CardHeader>
       <CardContent className="grid gap-3">
+        {items.length === 0 && emptyNote ? (
+          <div className="rounded-md border border-dashed bg-muted/35 p-3 text-xs text-muted-foreground">
+            {emptyNote}
+          </div>
+        ) : null}
         {items.map((item) => (
           <div key={item.id} className="rounded-lg border p-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -88,14 +100,18 @@ function AiFeaturePanel({
                   Trace claims
                 </Button>
               ) : null}
-              <Button size="sm" onClick={() => onUpdate(item.id, "applied")}>
-                <CheckIcon data-icon="inline-start" />
-                Confirm
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => onUpdate(item.id, "dismissed")}>
-                <XIcon data-icon="inline-start" />
-                Dismiss
-              </Button>
+              {item.reviewState === "draft" || item.reviewState === "needs_human" ? (
+                <>
+                  <Button size="sm" onClick={() => onUpdate(item.id, "applied")}>
+                    <CheckIcon data-icon="inline-start" />
+                    Confirm
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => onUpdate(item.id, "dismissed")}>
+                    <XIcon data-icon="inline-start" />
+                    Dismiss
+                  </Button>
+                </>
+              ) : null}
             </div>
           </div>
         ))}
@@ -136,6 +152,8 @@ export function AiInsights() {
   const suggestionsQuery = useAiSuggestions()
   const runQuery = useRunAiQuery()
   const updateSuggestionMutation = useUpdateAiSuggestion()
+  const generateBriefing = useGenerateBriefing()
+  const generateForecast = useGenerateForecast()
   const [queryResult, setQueryResult] = React.useState<AiQueryResult | null>(null)
   const [queryVisible, setQueryVisible] = React.useState(false)
   const form = useForm<AiQueryFormValues>({
@@ -172,6 +190,28 @@ export function AiInsights() {
       },
       onError: (error) => {
         toast.error(error instanceof Error ? error.message : "Unable to convert question")
+      },
+    })
+  }
+
+  function onGenerateBriefing() {
+    generateBriefing.mutate(undefined, {
+      onSuccess: () => {
+        toast.success("Monthly briefing generated")
+      },
+      onError: (error) => {
+        toast.error(error instanceof Error ? error.message : "Unable to generate briefing")
+      },
+    })
+  }
+
+  function onGenerateForecast() {
+    generateForecast.mutate(undefined, {
+      onSuccess: () => {
+        toast.success("Forecast generated")
+      },
+      onError: (error) => {
+        toast.error(error instanceof Error ? error.message : "Unable to generate forecast")
       },
     })
   }
@@ -236,14 +276,18 @@ export function AiInsights() {
                       Open source rows
                     </Button>
                   ) : null}
-                  <Button size="sm" onClick={() => updateSuggestion(item.id, "applied")}>
-                    <CheckIcon data-icon="inline-start" />
-                    Apply suggestion
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => updateSuggestion(item.id, "dismissed")}>
-                    <XIcon data-icon="inline-start" />
-                    Dismiss
-                  </Button>
+                  {item.reviewState === "draft" || item.reviewState === "needs_human" ? (
+                    <>
+                      <Button size="sm" onClick={() => updateSuggestion(item.id, "applied")}>
+                        <CheckIcon data-icon="inline-start" />
+                        Apply suggestion
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => updateSuggestion(item.id, "dismissed")}>
+                        <XIcon data-icon="inline-start" />
+                        Dismiss
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -315,9 +359,39 @@ export function AiInsights() {
         </Card>
       </div>
       <div className="grid gap-4 xl:grid-cols-3">
-        <AiFeaturePanel feature="briefing" items={briefingItems} onUpdate={updateSuggestion} />
-        <AiFeaturePanel feature="forecast" items={forecastItems} onUpdate={updateSuggestion} />
-        <AiFeaturePanel feature="ocr" items={ocrItems} onUpdate={updateSuggestion} />
+        <AiFeaturePanel
+          feature="briefing"
+          items={briefingItems}
+          onUpdate={updateSuggestion}
+          actions={
+            <Button size="sm" disabled={generateBriefing.isPending} onClick={onGenerateBriefing}>
+              {generateBriefing.isPending ? <Loader2Icon data-icon="inline-start" className="animate-spin" /> : null}
+              Generate briefing
+            </Button>
+          }
+        />
+        <AiFeaturePanel
+          feature="forecast"
+          items={forecastItems}
+          onUpdate={updateSuggestion}
+          actions={
+            <Button size="sm" disabled={generateForecast.isPending} onClick={onGenerateForecast}>
+              {generateForecast.isPending ? <Loader2Icon data-icon="inline-start" className="animate-spin" /> : null}
+              Generate forecast
+            </Button>
+          }
+        />
+        <AiFeaturePanel
+          feature="ocr"
+          items={ocrItems}
+          onUpdate={updateSuggestion}
+          emptyNote={
+            <>
+              <span className="font-medium text-foreground">MVP note: </span>
+              Receipt / invoice OCR requires a multimodal model to parse images. No compatible model is configured yet. This will be added when a vision-capable model is available via OpenRouter or alternative providers.
+            </>
+          }
+        />
       </div>
     </PageShell>
   )

@@ -337,6 +337,106 @@ export async function categorizeRowsWithOpenRouter(
   }
 }
 
+export type BriefingAggregates = {
+  budgetVsActual: Array<{ budgetPercent: number; department: string; expense: number }>
+  departmentRollups: Array<{ contributionMarginUsd: number; department: string; expenseUsd: number; marginPercent: number; revenueUsd: number }>
+  expenseByCategory: Array<{ category: string; expense: number }>
+  kpis: Array<{ label: string; value: string }>
+  monthlySeries: Array<{ date: string; expenseUsd: number; marginPercent: number; netProfitUsd: number; revenueUsd: number }>
+  period: { from: string; to: string }
+  topClients: Array<{ client: string; revenue: number }>
+  totals: { expenseUsd: number; marginPercent: number; netProfitUsd: number; revenueUsd: number; rowCount: number }
+}
+
+export type ForecastProjections = {
+  next12Months: Array<{ expenseUsd: number; label: string; netUsd: number; revenueUsd: number }>
+  period: { from: string; to: string }
+  recurringTemplates: Array<{ amountUsd: number; cadence: string; template: string; type: "revenue" | "expense" }>
+  recentMonthlyAverage: { expenseUsd: number; revenueUsd: number }
+}
+
+export async function generateBriefingWithOpenRouter(
+  aggregates: BriefingAggregates
+): Promise<{ summary: string }> {
+  const apiKey = process.env.OPENROUTER_API_KEY
+  const model = process.env.OPENROUTER_MODEL || DEFAULT_MODEL
+  const client = new OpenRouter({ apiKey: apiKey ?? "placeholder" })
+
+  if (!apiKey) {
+    return {
+      summary: `Techquarters generated ${aggregates.totals.revenueUsd.toLocaleString("en-US", { style: "currency", currency: "USD" })} in revenue and ${aggregates.totals.expenseUsd.toLocaleString("en-US", { style: "currency", currency: "USD" })} in expenses during ${aggregates.period.from} to ${aggregates.period.to}, with a net profit of ${aggregates.totals.netProfitUsd.toLocaleString("en-US", { style: "currency", currency: "USD" })} (${aggregates.totals.marginPercent.toFixed(0)}% margin). This summary was generated without OpenRouter because no API key is configured.`,
+    }
+  }
+
+  try {
+    const response = await client.chat.send({
+      chatRequest: {
+        model,
+        messages: [
+          {
+            role: "system",
+            content: "You write a plain-English monthly business briefing for a founder. Use the provided aggregates only. Do not invent numbers. Keep it to 3-5 sentences. Be direct and actionable.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify(aggregates),
+          },
+        ],
+        temperature: 0.3,
+        maxTokens: 400,
+      },
+    })
+    const text = contentToText(response.choices[0]?.message.content)
+
+    return { summary: text || "Unable to generate briefing." }
+  } catch (error) {
+    logOpenRouterError(error)
+    return { summary: "Briefing generation failed. Check OpenRouter logs for details." }
+  }
+}
+
+export async function generateForecastWithOpenRouter(
+  projections: ForecastProjections
+): Promise<{ narrative: string }> {
+  const apiKey = process.env.OPENROUTER_API_KEY
+  const model = process.env.OPENROUTER_MODEL || DEFAULT_MODEL
+  const client = new OpenRouter({ apiKey: apiKey ?? "placeholder" })
+
+  if (!apiKey) {
+    const first = projections.next12Months[0]
+    const last = projections.next12Months[projections.next12Months.length - 1]
+    return {
+      narrative: `Based on ${projections.recurringTemplates.length} active recurring templates and a recent monthly average of ${projections.recentMonthlyAverage.revenueUsd.toLocaleString("en-US", { style: "currency", currency: "USD" })} revenue / ${projections.recentMonthlyAverage.expenseUsd.toLocaleString("en-US", { style: "currency", currency: "USD" })} expenses, the 12-month projection runs from ${first?.label ?? "N/A"} to ${last?.label ?? "N/A"}. This forecast was generated without OpenRouter because no API key is configured.`,
+    }
+  }
+
+  try {
+    const response = await client.chat.send({
+      chatRequest: {
+        model,
+        messages: [
+          {
+            role: "system",
+            content: "You narrate a 12-month financial forecast for a founder. Use only the provided projection data. Highlight risks, cash trajectory, and assumptions. Keep to 3-5 sentences. Be honest about uncertainty.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify(projections),
+          },
+        ],
+        temperature: 0.3,
+        maxTokens: 400,
+      },
+    })
+    const text = contentToText(response.choices[0]?.message.content)
+
+    return { narrative: text || "Unable to generate forecast narrative." }
+  } catch (error) {
+    logOpenRouterError(error)
+    return { narrative: "Forecast generation failed. Check OpenRouter logs for details." }
+  }
+}
+
 export async function translateQuestionToFiltersWithOpenRouter(
   question: string,
   lookup: { categories: Category[]; clients: Client[]; departments: Department[] }

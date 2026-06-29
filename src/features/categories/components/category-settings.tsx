@@ -301,6 +301,15 @@ function CategoryList({
   )
 }
 
+function MvpNote({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-md border border-dashed bg-muted/35 p-3 text-xs text-muted-foreground">
+      <span className="font-medium text-foreground">MVP note: </span>
+      {children}
+    </div>
+  )
+}
+
 export function CategorySettings() {
   const queryClient = useQueryClient()
   const [recurringUrlState, recurringUrlSetters] = useRecurringItemsUrlState()
@@ -776,9 +785,12 @@ export function CategorySettings() {
         <Card>
           <CardHeader>
             <CardTitle>Categorization rules</CardTitle>
-            <CardDescription>Human-readable rules stay local until Phase 6 import rules are operational.</CardDescription>
+            <CardDescription>Human-readable rules for future import automation.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 text-xs">
+            <MvpNote>
+              Rules can be added, renamed, and archived in this UI, but they are not used by CSV import suggestions yet. Next: persist them and apply them during import review.
+            </MvpNote>
             <div className="flex gap-2">
               <Input value={ruleDraft} onChange={(event) => setRuleDraft(event.target.value)} placeholder="If vendor contains Vercel, set Software & subscriptions > infrastructure" />
               <Button
@@ -817,6 +829,9 @@ export function CategorySettings() {
             <CardDescription>Templates persist with stable idempotency keys and never directly post ledger rows.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
+            <MvpNote>
+              Templates are saved and searchable, but scheduled ledger creation is not automated yet. Next: add a recurring runner, approval queue, and exception handling.
+            </MvpNote>
             <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 md:grid-cols-2 2xl:grid-cols-4">
               <Field>
                 <FieldLabel>Template</FieldLabel>
@@ -975,9 +990,12 @@ export function CategorySettings() {
         <Card>
           <CardHeader>
             <CardTitle>CSV mapping rules</CardTitle>
-            <CardDescription>Saved mappings become operational in Phase 6 CSV import pipeline.</CardDescription>
+            <CardDescription>Reusable column mappings for future CSV automation.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 text-xs">
+            <MvpNote>
+              Mapping entries are UI-managed notes for now and do not transform uploaded files yet. Next: persist mappings and prefill parser columns per source.
+            </MvpNote>
             <div className="flex gap-2">
               <Input value={mappingDraft} onChange={(event) => setMappingDraft(event.target.value)} placeholder="Amount Paid -> amount" />
               <Button

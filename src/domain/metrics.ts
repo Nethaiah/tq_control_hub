@@ -407,9 +407,33 @@ export function buildCalendarMetrics({
   startDate?: string
   endDate?: string
 }): CalendarMetrics {
-  const windowEvents = events
+  const realEvents = events
     .filter((event) => event.date >= startDate && event.date <= endDate)
     .sort((a, b) => a.date.localeCompare(b.date))
+  const realRecurringIds = new Set(
+    realEvents.map((event) => event.recurringItemId).filter((id): id is string => Boolean(id))
+  )
+
+  const plannedEvents: CalendarEvent[] = recurringItems
+    .filter(
+      (item) =>
+        item.nextRun >= startDate &&
+        item.nextRun <= endDate &&
+        !realRecurringIds.has(item.id)
+    )
+    .map((item) => ({
+      id: `planned:${item.id}`,
+      title: item.template,
+      date: item.nextRun,
+      type: (item.type === "revenue" ? "invoice_due" : "payroll") as CalendarEvent["type"],
+      amountUsd: amountToUsd(item),
+      transactionId: null,
+      recurringItemId: item.id,
+    }))
+
+  const windowEvents = [...realEvents, ...plannedEvents].sort(
+    (a, b) => a.date.localeCompare(b.date)
+  )
   const inflowTypes: CalendarEvent["type"][] = ["retainer", "invoice_due"]
   const outflowTypes: CalendarEvent["type"][] = ["payroll", "renewal", "tax"]
   const expectedInflowUsd = windowEvents
@@ -448,7 +472,7 @@ export function buildCalendarMetrics({
         amountUsd: amountToUsd(item),
         type: item.type,
         idempotencyKey: item.idempotencyKey,
-        calendarEventId: matchedEvent?.id ?? null,
+        calendarEventId: matchedEvent && !matchedEvent.id.startsWith("planned:") ? matchedEvent.id : null,
       }
     }),
   }
