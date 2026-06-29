@@ -61,6 +61,12 @@ type RecurringItemsApiFilters = {
   type?: "revenue" | "expense"
 }
 
+type RecurringTableFilterDraft = {
+  categoryId: string | null
+  departmentId: string | null
+  type: "revenue" | "expense" | null
+}
+
 type RecurringItemInput = {
   amount: number
   cadence: "monthly" | "quarterly" | "annual"
@@ -298,6 +304,11 @@ function CategoryList({
 export function CategorySettings() {
   const queryClient = useQueryClient()
   const [recurringUrlState, recurringUrlSetters] = useRecurringItemsUrlState()
+  const [recurringFilterDraft, setRecurringFilterDraft] = React.useState<RecurringTableFilterDraft>(() => ({
+    categoryId: recurringUrlState.categoryId,
+    departmentId: recurringUrlState.departmentId,
+    type: recurringUrlState.type,
+  }))
   const recurringApiFilters: RecurringItemsApiFilters = {
     categoryId: recurringUrlState.categoryId ?? undefined,
     departmentId: recurringUrlState.departmentId ?? undefined,
@@ -377,6 +388,14 @@ export function CategorySettings() {
   const kind = form.watch("kind")
 
   React.useEffect(() => {
+    setRecurringFilterDraft({
+      categoryId: recurringUrlState.categoryId,
+      departmentId: recurringUrlState.departmentId,
+      type: recurringUrlState.type,
+    })
+  }, [recurringUrlState.categoryId, recurringUrlState.departmentId, recurringUrlState.type])
+
+  React.useEffect(() => {
     if (!categoriesQuery.data || !recurringItemsQuery.data) return
 
     setRecurringDraft((current) => {
@@ -437,8 +456,8 @@ export function CategorySettings() {
   const selectedRecurringCategoryLabel = recurringDraft.categoryId ? categoryName(categories, recurringDraft.categoryId) : "Choose category"
   const selectedRecurringSubcategoryLabel = recurringDraft.subcategoryId !== "none" ? categoryName(categories, recurringDraft.subcategoryId) : "No subcategory"
   const selectedRecurringClientLabel = recurringDraft.clientId !== "none" ? (clientName(recurringData.clients, recurringDraft.clientId) ?? "Unknown client") : "No client"
-  const selectedFilterDepartmentLabel = recurringUrlState.departmentId ? departmentName(recurringData.departments, recurringUrlState.departmentId) : "All departments"
-  const selectedFilterCategoryLabel = recurringUrlState.categoryId ? categoryName(categories, recurringUrlState.categoryId) : "All categories"
+  const selectedFilterDepartmentLabel = recurringFilterDraft.departmentId ? departmentName(recurringData.departments, recurringFilterDraft.departmentId) : "All departments"
+  const selectedFilterCategoryLabel = recurringFilterDraft.categoryId ? categoryName(categories, recurringFilterDraft.categoryId) : "All categories"
   const recurringTablePagination: PaginationState = {
     pageIndex: recurringUrlState.page - 1,
     pageSize: recurringUrlState.pageSize,
@@ -455,6 +474,18 @@ export function CategorySettings() {
 
   function updateRecurringDraft(patch: Partial<RecurringDraft>) {
     setRecurringDraft((current) => ({ ...current, ...patch }))
+  }
+
+  function updateRecurringFilterDraft(patch: Partial<RecurringTableFilterDraft>) {
+    setRecurringFilterDraft((current) => ({ ...current, ...patch }))
+  }
+
+  function clearRecurringFilterDraft() {
+    setRecurringFilterDraft({ categoryId: null, departmentId: null, type: null })
+  }
+
+  function saveRecurringFilterDraft() {
+    recurringUrlSetters.setFilters(recurringFilterDraft)
   }
 
   async function addRecurringTemplate() {
@@ -865,9 +896,9 @@ export function CategorySettings() {
             <div className="grid gap-2 rounded-lg border p-3 md:grid-cols-4">
               <Field>
                 <FieldLabel>Table type</FieldLabel>
-                <Select value={recurringUrlState.type ?? "all"} onValueChange={(value) => recurringUrlSetters.setType(value === "all" ? null : (value as "revenue" | "expense"))}>
+                <Select value={recurringFilterDraft.type ?? "all"} onValueChange={(value) => updateRecurringFilterDraft({ type: value === "all" ? null : (value as "revenue" | "expense") })}>
                   <SelectTrigger className="w-full" aria-label="Filter recurring type">
-                    <SelectValue>{recurringUrlState.type ? titleCase(recurringUrlState.type) : "All types"}</SelectValue>
+                    <SelectValue>{recurringFilterDraft.type ? titleCase(recurringFilterDraft.type) : "All types"}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
@@ -880,7 +911,7 @@ export function CategorySettings() {
               </Field>
               <Field>
                 <FieldLabel>Table department</FieldLabel>
-                <Select value={recurringUrlState.departmentId ?? "all"} onValueChange={(value) => recurringUrlSetters.setDepartmentId(value === "all" ? null : value)}>
+                <Select value={recurringFilterDraft.departmentId ?? "all"} onValueChange={(value) => updateRecurringFilterDraft({ departmentId: value === "all" ? null : value })}>
                   <SelectTrigger className="w-full" aria-label="Filter recurring department">
                     <SelectValue>{selectedFilterDepartmentLabel}</SelectValue>
                   </SelectTrigger>
@@ -896,7 +927,7 @@ export function CategorySettings() {
               </Field>
               <Field>
                 <FieldLabel>Table category</FieldLabel>
-                <Select value={recurringUrlState.categoryId ?? "all"} onValueChange={(value) => recurringUrlSetters.setCategoryId(value === "all" ? null : value)}>
+                <Select value={recurringFilterDraft.categoryId ?? "all"} onValueChange={(value) => updateRecurringFilterDraft({ categoryId: value === "all" ? null : value })}>
                   <SelectTrigger className="w-full" aria-label="Filter recurring category">
                     <SelectValue>{selectedFilterCategoryLabel}</SelectValue>
                   </SelectTrigger>
@@ -910,9 +941,12 @@ export function CategorySettings() {
                   </SelectContent>
                 </Select>
               </Field>
-              <div className="flex items-end">
-                <Button type="button" variant="outline" className="w-full" onClick={recurringUrlSetters.resetFilters}>
-                  Reset table filters
+              <div className="flex items-end gap-2">
+                <Button type="button" variant="outline" className="flex-1" onClick={clearRecurringFilterDraft}>
+                  Clear
+                </Button>
+                <Button type="button" className="flex-1" onClick={saveRecurringFilterDraft}>
+                  Save filters
                 </Button>
               </div>
             </div>

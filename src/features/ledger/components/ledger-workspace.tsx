@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef, PaginationState, SortingState, Table as TanStackTable } from "@tanstack/react-table"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
-import { AlertTriangleIcon, Loader2Icon, PlusIcon, RotateCcwIcon, SearchIcon, XIcon } from "lucide-react"
+import { AlertTriangleIcon, Loader2Icon, PlusIcon, RotateCcwIcon, XIcon } from "lucide-react"
 
 import { DataTable } from "@/components/common/data-table"
 import { DatePicker } from "@/components/common/date-picker"
@@ -40,7 +40,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { formatCurrency } from "@/domain/currency"
-import { activeFilterCount } from "@/domain/filters"
+import { DEFAULT_MONTH_FILTERS, activeFilterCount } from "@/domain/filters"
 import { manualTransactionFormSchema } from "@/domain/schemas"
 import type {
   Category,
@@ -488,6 +488,7 @@ export function LedgerWorkspace() {
   const { filters, page, pageSize, search: urlSearch, sortBy, sortDir } = urlState
   const { setFilters, clearFilter, resetFilters, setPagination, setSorting, setSearch } = urlSetters
   const queryClient = useQueryClient()
+  const [filterDraft, setFilterDraft] = React.useState<TransactionFilters>(filters)
 
   const apiFilters: LedgerApiFilters = {
     ...filters,
@@ -504,20 +505,52 @@ export function LedgerWorkspace() {
   })
   const [bulkDepartmentId, setBulkDepartmentId] = React.useState<string>("")
   const [bulkCategoryId, setBulkCategoryId] = React.useState<string>("")
-  const [searchInput, setSearchInput] = React.useState(urlSearch ?? "")
 
   React.useEffect(() => {
-    setSearchInput(urlSearch ?? "")
-  }, [urlSearch])
+    setFilterDraft(filters)
+  }, [
+    filters.categoryId,
+    filters.clientOrVendor,
+    filters.departmentId,
+    filters.from,
+    filters.ids,
+    filters.search,
+    filters.source,
+    filters.to,
+    filters.type,
+  ])
 
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchInput !== (urlSearch ?? "")) {
-        setSearch(searchInput)
-      }
-    }, 400)
-    return () => clearTimeout(timer)
-  }, [searchInput, urlSearch, setSearch])
+  function updateFilterDraft(patch: Partial<TransactionFilters>) {
+    setFilterDraft((current) => ({ ...current, ...patch }))
+  }
+
+  function resetFilterDraft() {
+    setFilterDraft({
+      categoryId: undefined,
+      clientOrVendor: undefined,
+      departmentId: undefined,
+      from: DEFAULT_MONTH_FILTERS.from,
+      ids: undefined,
+      search: undefined,
+      source: undefined,
+      to: DEFAULT_MONTH_FILTERS.to,
+      type: undefined,
+    })
+  }
+
+  function applyFilterDraft() {
+    setFilters({
+      categoryId: filterDraft.categoryId,
+      clientOrVendor: filterDraft.clientOrVendor,
+      departmentId: filterDraft.departmentId,
+      from: filterDraft.from,
+      ids: undefined,
+      search: filterDraft.search,
+      source: filterDraft.source,
+      to: filterDraft.to,
+      type: filterDraft.type,
+    })
+  }
 
   const data = ledgerQuery.data
   const departments = data?.departments ?? []
@@ -1076,23 +1109,23 @@ export function LedgerWorkspace() {
                   <Field className="min-w-44">
                     <FieldLabel htmlFor="filter-from">From</FieldLabel>
                     <DatePicker
-                      value={filters.from ?? ""}
-                      onChange={(value) => setFilters({ from: value || undefined, ids: undefined })}
+                      value={filterDraft.from ?? ""}
+                      onChange={(value) => updateFilterDraft({ from: value || undefined })}
                     />
                   </Field>
                   <Field className="min-w-44">
                     <FieldLabel htmlFor="filter-to">To</FieldLabel>
                     <DatePicker
-                      value={filters.to ?? ""}
-                      onChange={(value) => setFilters({ to: value || undefined, ids: undefined })}
+                      value={filterDraft.to ?? ""}
+                      onChange={(value) => updateFilterDraft({ to: value || undefined })}
                     />
                   </Field>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <SelectFilter
                     label="Type"
-                    value={filters.type}
-                    onValueChange={(value) => setFilters({ type: value as TransactionFilters["type"], ids: undefined })}
+                    value={filterDraft.type}
+                    onValueChange={(value) => updateFilterDraft({ type: value as TransactionFilters["type"] })}
                     options={[
                       { value: "revenue", label: "Revenue" },
                       { value: "expense", label: "Expense" },
@@ -1100,26 +1133,26 @@ export function LedgerWorkspace() {
                   />
                   <SelectFilter
                     label="Department"
-                    value={filters.departmentId}
-                    onValueChange={(value) => setFilters({ departmentId: value, ids: undefined })}
+                    value={filterDraft.departmentId}
+                    onValueChange={(value) => updateFilterDraft({ departmentId: value })}
                     options={departments.map((department) => ({ value: department.id, label: department.name }))}
                   />
                   <SelectFilter
                     label="Category"
-                    value={filters.categoryId}
-                    onValueChange={(value) => setFilters({ categoryId: value, ids: undefined })}
+                    value={filterDraft.categoryId}
+                    onValueChange={(value) => updateFilterDraft({ categoryId: value })}
                     options={categories.filter((category) => category.parentId === null).map((category) => ({ value: category.id, label: category.name }))}
                   />
                   <SelectFilter
                     label="Client/vendor"
-                    value={filters.clientOrVendor}
-                    onValueChange={(value) => setFilters({ clientOrVendor: value, ids: undefined })}
+                    value={filterDraft.clientOrVendor}
+                    onValueChange={(value) => updateFilterDraft({ clientOrVendor: value })}
                     options={clientVendorOptions}
                   />
                   <SelectFilter
                     label="Source"
-                    value={filters.source}
-                    onValueChange={(value) => setFilters({ source: value as TransactionFilters["source"], ids: undefined })}
+                    value={filterDraft.source}
+                    onValueChange={(value) => updateFilterDraft({ source: value as TransactionFilters["source"] })}
                     options={[
                       { value: "manual", label: "Manual" },
                       { value: "csv", label: "CSV" },
@@ -1129,34 +1162,20 @@ export function LedgerWorkspace() {
                 </div>
                 <Field className="min-w-56 flex-1">
                   <FieldLabel htmlFor="filter-search">Search</FieldLabel>
-                  <div className="flex gap-2">
-                    <Input
-                      id="filter-search"
-                      defaultValue={filters.search ?? ""}
-                      placeholder="Description, client, vendor"
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          setFilters({ search: event.currentTarget.value || undefined, ids: undefined })
-                        }
-                      }}
-                    />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      aria-label="Apply search"
-                      onClick={() => {
-                        const input = document.getElementById("filter-search") as HTMLInputElement | null
-                        setFilters({ search: input?.value || undefined, ids: undefined })
-                      }}
-                    >
-                      <SearchIcon />
-                    </Button>
-                  </div>
+                  <Input
+                    id="filter-search"
+                    value={filterDraft.search ?? ""}
+                    placeholder="Description, client, vendor"
+                    onChange={(event) => updateFilterDraft({ search: event.target.value || undefined })}
+                  />
                 </Field>
-                <div className="flex justify-end">
-                  <Button variant="ghost" size="sm" onClick={resetFilters}>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button variant="ghost" size="sm" onClick={resetFilterDraft}>
                     <RotateCcwIcon data-icon="inline-start" />
-                    Reset filters
+                    Clear draft
+                  </Button>
+                  <Button size="sm" onClick={applyFilterDraft}>
+                    Save filters
                   </Button>
                 </div>
               </div>
@@ -1217,10 +1236,10 @@ export function LedgerWorkspace() {
         totalRows={totalRows}
         controlledPagination={controlledPagination}
         controlledSorting={controlledSorting}
-        controlledSearch={searchInput}
+        controlledSearch={urlSearch ?? ""}
         onPaginationChange={setPagination}
         onSortingChange={setSorting}
-        onSearchChange={setSearchInput}
+        onSearchChange={setSearch}
       />
     </div>
   )

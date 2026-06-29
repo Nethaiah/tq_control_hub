@@ -25,6 +25,31 @@ type UpdateStagedRowInput = {
   rowId: string
 }
 
+export type StagedRowsFilters = {
+  page: number
+  pageSize: number
+  reviewState?: CsvStagedRow["reviewState"]
+  search?: string
+  sortBy?: string
+  sortDir?: "asc" | "desc"
+}
+
+export type StagedRowsData = {
+  pagination: {
+    page: number
+    pageSize: number
+    totalRows: number
+    totalPages: number
+  }
+  stagedRows: CsvStagedRow[]
+  summary: {
+    approvedCount: number
+    blockedCount: number
+    committableCount: number
+    lowConfidenceCount: number
+  }
+}
+
 async function readApiResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
   const payload = (await response.json().catch(() => null)) as ApiResponse<T> | null
 
@@ -37,6 +62,7 @@ async function readApiResponse<T>(response: Response, fallbackMessage: string): 
 
 export const importsQueryKey = ["imports"] as const
 export const stagedRowsQueryKey = (importId: string | null | undefined) => ["imports", importId, "staged-rows"] as const
+export const stagedRowsQueryOptionsKey = (importId: string | null | undefined, filters: StagedRowsFilters) => [...stagedRowsQueryKey(importId), filters] as const
 
 export function useImportsData() {
   return useQuery({
@@ -48,16 +74,24 @@ export function useImportsData() {
   })
 }
 
-export function useStagedRows(importId: string | null | undefined) {
+export function useStagedRows(importId: string | null | undefined, filters: StagedRowsFilters) {
   return useQuery({
     enabled: Boolean(importId),
-    queryKey: stagedRowsQueryKey(importId),
+    queryKey: stagedRowsQueryOptionsKey(importId, filters),
     queryFn: async () => {
-      const response = await fetch(`/api/imports/${encodeURIComponent(importId!)}/staged-rows`, {
+      const params = new URLSearchParams()
+
+      for (const [key, value] of Object.entries(filters)) {
+        if (value !== undefined && value !== null && value !== "") {
+          params.set(key, String(value))
+        }
+      }
+
+      const query = params.toString()
+      const response = await fetch(`/api/imports/${encodeURIComponent(importId!)}/staged-rows${query ? `?${query}` : ""}`, {
         credentials: "same-origin",
       })
-      const data = await readApiResponse<{ stagedRows: CsvStagedRow[] }>(response, "Unable to load staged rows")
-      return data.stagedRows
+      return readApiResponse<StagedRowsData>(response, "Unable to load staged rows")
     },
   })
 }
@@ -81,7 +115,7 @@ export function useUploadCsv() {
     },
     onSuccess: async (data) => {
       await queryClient.invalidateQueries({ queryKey: importsQueryKey })
-      queryClient.setQueryData(stagedRowsQueryKey(data.import.id), data.stagedRows)
+      await queryClient.invalidateQueries({ queryKey: stagedRowsQueryKey(data.import.id) })
     },
   })
 }
@@ -103,23 +137,14 @@ export function useUpdateStagedRow() {
 
       return readApiResponse<{ stagedRow: CsvStagedRow }>(response, "Unable to update staged row")
     },
-    onMutate: async (input) => {
-      const key = stagedRowsQueryKey(input.importId)
-      await queryClient.cancelQueries({ queryKey: key })
-      const previousRows = queryClient.getQueryData<CsvStagedRow[]>(key)
-
-      queryClient.setQueryData<CsvStagedRow[]>(key, (current) =>
-        current?.map((row) => row.id === input.rowId ? { ...row, ...input.patch } : row) ?? []
-      )
-
-      return { previousRows }
-    },
-    onError: (_error, input, context) => {
-      queryClient.setQueryData(stagedRowsQueryKey(input.importId), context?.previousRows)
-    },
     onSuccess: (data, input) => {
-      queryClient.setQueryData<CsvStagedRow[]>(stagedRowsQueryKey(input.importId), (current) =>
-        current?.map((row) => row.id === input.rowId ? data.stagedRow : row) ?? [data.stagedRow]
+      queryClient.setQueriesData<StagedRowsData>({ queryKey: stagedRowsQueryKey(input.importId) }, (current) =>
+        current
+          ? {
+              ...current,
+              stagedRows: current.stagedRows.map((row) => row.id === input.rowId ? data.stagedRow : row),
+            }
+          : current
       )
     },
     onSettled: (_data, _error, input) => {

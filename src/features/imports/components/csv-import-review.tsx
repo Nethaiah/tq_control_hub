@@ -45,19 +45,6 @@ function getName<T extends { id: string; name: string }>(items: T[], id: string 
   return items.find((item) => item.id === id)?.name ?? "Unmapped"
 }
 
-function isCommittable(row: CsvStagedRow) {
-  return (
-    row.reviewState === "approved" &&
-    !row.duplicate &&
-    row.validationIssues.length === 0 &&
-    Boolean(row.parsedDate) &&
-    Boolean(row.parsedAmount) &&
-    Boolean(row.currency) &&
-    Boolean(row.suggestedDepartmentId) &&
-    Boolean(row.suggestedCategoryId)
-  )
-}
-
 function isReadyForApproval(row: CsvStagedRow) {
   return (
     Boolean(row.parsedDate) &&
@@ -111,14 +98,6 @@ function effectiveAmount(row: CsvStagedRow) {
   return row.parsedAmount === null ? row.rawAmount : String(row.parsedAmount)
 }
 
-function stagedSortValue(row: CsvStagedRow, sortBy: string | null, departments: Department[], categories: Category[]) {
-  if (sortBy === "suggestion") return suggestionText(row, departments, categories)
-  if (sortBy === "validation") return row.validationIssues.join(", ") || "Valid"
-  if (sortBy === "suggestionSource") return row.suggestionSource
-  const value = row[sortBy as keyof CsvStagedRow]
-  return typeof value === "number" ? value : String(value ?? "")
-}
-
 function SuggestionSourceBadge({ row }: { row: CsvStagedRow }) {
   const label = row.suggestionSource === "openrouter" ? "OpenRouter" : row.suggestionSource === "manual" ? "Manual" : "Keyword"
   const variant = row.suggestionSource === "openrouter" ? "outline" : row.suggestionSource === "manual" ? "secondary" : "secondary"
@@ -151,8 +130,17 @@ export function CsvImportReview() {
   const activeImport = (importId ? imports.find((item) => item.id === importId) : null) ?? imports[0] ?? null
   const isActiveImportCommitted = activeImport?.status === "committed"
   const isActiveImportReviewable = activeImport?.status === "needs_review" || activeImport?.status === "staged"
-  const stagedRowsQuery = useStagedRows(activeImport?.id)
-  const stagedRows = stagedRowsQuery.data ?? []
+  const [stagedReviewDraft, setStagedReviewDraft] = React.useState<CsvStagedRow["reviewState"] | null>(stagedReviewState)
+  const stagedRowsQuery = useStagedRows(activeImport?.id, {
+    page: stagedPage,
+    pageSize: stagedPageSize,
+    reviewState: stagedReviewState ?? undefined,
+    search: stagedSearch ?? undefined,
+    sortBy: stagedSortBy ?? undefined,
+    sortDir: stagedSortDir ?? undefined,
+  })
+  const stagedRowsData = stagedRowsQuery.data
+  const stagedRows = stagedRowsData?.stagedRows ?? []
   const uploadCsv = useUploadCsv()
   const updateRow = useUpdateStagedRow()
   const commitImport = useCommitImport()
@@ -174,10 +162,10 @@ export function CsvImportReview() {
     () => categories.filter((category) => category.kind === "expense" && !category.archived),
     [categories]
   )
-  const lowConfidenceCount = stagedRows.filter((row) => row.reviewState === "needs_human").length
-  const blockedCount = stagedRows.filter((row) => row.reviewState === "blocked").length
-  const approvedCount = stagedRows.filter((row) => row.reviewState === "approved").length
-  const committableRows = stagedRows.filter(isCommittable)
+  const lowConfidenceCount = stagedRowsData?.summary.lowConfidenceCount ?? 0
+  const blockedCount = stagedRowsData?.summary.blockedCount ?? 0
+  const approvedCount = stagedRowsData?.summary.approvedCount ?? 0
+  const committableCount = stagedRowsData?.summary.committableCount ?? 0
   const controlledSorting = React.useMemo<SortingState>(
     () => stagedSortBy ? [{ desc: stagedSortDir === "desc", id: stagedSortBy }] : [],
     [stagedSortBy, stagedSortDir]
@@ -186,44 +174,12 @@ export function CsvImportReview() {
     () => ({ pageIndex: stagedPage - 1, pageSize: stagedPageSize }),
     [stagedPage, stagedPageSize]
   )
-  const filteredRows = React.useMemo(() => {
-    const search = stagedSearch?.trim().toLowerCase()
-    const rows = stagedRows.filter((row) => {
-      if (stagedReviewState && row.reviewState !== stagedReviewState) return false
-      if (!search) return true
+  const pageCount = stagedRowsData?.pagination.totalPages ?? 1
+  const totalRows = stagedRowsData?.pagination.totalRows ?? 0
 
-      return [
-        row.rawDate,
-        row.parsedDate ?? "",
-        row.rawDescription,
-        row.rawAmount,
-        row.parsedAmount === null ? "" : String(row.parsedAmount),
-        row.currency ?? "",
-        row.reviewState,
-        row.suggestionModel ?? "",
-        row.suggestionSource,
-        suggestionText(row, departments, categories),
-        row.validationIssues.join(", "),
-      ].some((value) => value.toLowerCase().includes(search))
-    })
-
-    if (!stagedSortBy) return rows
-
-    return [...rows].sort((first, second) => {
-      const firstValue = stagedSortValue(first, stagedSortBy, departments, categories)
-      const secondValue = stagedSortValue(second, stagedSortBy, departments, categories)
-      const direction = stagedSortDir === "desc" ? -1 : 1
-
-      if (typeof firstValue === "number" && typeof secondValue === "number") {
-        return (firstValue - secondValue) * direction
-      }
-
-      return String(firstValue).localeCompare(String(secondValue)) * direction
-    })
-  }, [categories, departments, stagedReviewState, stagedRows, stagedSearch, stagedSortBy, stagedSortDir])
-  const pageCount = Math.max(1, Math.ceil(filteredRows.length / stagedPageSize))
-  const currentPageIndex = Math.min(stagedPage - 1, pageCount - 1)
-  const visibleRows = filteredRows.slice(currentPageIndex * stagedPageSize, currentPageIndex * stagedPageSize + stagedPageSize)
+  React.useEffect(() => {
+    setStagedReviewDraft(stagedReviewState)
+  }, [stagedReviewState])
 
   function saveMapping(values: CsvMappingFormValues) {
     toast.success("Mapping ready for the next upload", {
@@ -743,7 +699,7 @@ export function CsvImportReview() {
         <Card><CardHeader><CardDescription>Approved rows</CardDescription><CardTitle>{approvedCount}</CardTitle></CardHeader></Card>
         <Card><CardHeader><CardDescription>Low confidence</CardDescription><CardTitle>{lowConfidenceCount}</CardTitle></CardHeader></Card>
         <Card><CardHeader><CardDescription>Blocked rows</CardDescription><CardTitle>{blockedCount}</CardTitle></CardHeader></Card>
-        <Card><CardHeader><CardDescription>Ready to commit</CardDescription><CardTitle>{committableRows.length}</CardTitle></CardHeader></Card>
+        <Card><CardHeader><CardDescription>Ready to commit</CardDescription><CardTitle>{committableCount}</CardTitle></CardHeader></Card>
       </div>
       <Card>
         <CardHeader>
@@ -753,21 +709,21 @@ export function CsvImportReview() {
         <CardContent className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-xs">
             <div className="text-muted-foreground">
-              Showing {visibleRows.length} of {filteredRows.length} staged rows. Suggestions use OpenRouter when available, with keyword rules as fallback.
+              Showing {stagedRows.length} of {totalRows} staged rows. Suggestions use OpenRouter when available, with keyword rules as fallback.
             </div>
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground">Review filter</span>
               <Select
-                value={stagedReviewState ?? "all"}
-                onValueChange={(value) => setStagedReviewState(value === "all" ? null : value as CsvStagedRow["reviewState"])}
+                value={stagedReviewDraft ?? "all"}
+                onValueChange={(value) => setStagedReviewDraft(value === "all" ? null : value as CsvStagedRow["reviewState"])}
               >
                 <SelectTrigger className="h-8 w-40" aria-label="Review state filter">
                   <StagedSelectValue>
-                    {stagedReviewState === "approved"
+                    {stagedReviewDraft === "approved"
                       ? "Approved"
-                      : stagedReviewState === "needs_human"
+                      : stagedReviewDraft === "needs_human"
                         ? "Needs human"
-                        : stagedReviewState === "blocked"
+                        : stagedReviewDraft === "blocked"
                           ? "Blocked"
                           : "All rows"}
                   </StagedSelectValue>
@@ -781,6 +737,12 @@ export function CsvImportReview() {
                   </SelectGroup>
                 </SelectContent>
               </Select>
+              <Button type="button" variant="outline" size="sm" onClick={() => setStagedReviewDraft(null)}>
+                Clear
+              </Button>
+              <Button type="button" size="sm" onClick={() => setStagedReviewState(stagedReviewDraft)}>
+                Save
+              </Button>
             </div>
           </div>
           {isActiveImportCommitted ? (
@@ -794,7 +756,7 @@ export function CsvImportReview() {
             </div>
           ) : (
             <DataTable
-              data={visibleRows}
+              data={stagedRows}
               columns={stagedColumns}
               getRowId={(row) => row.id}
               enableRowSelection
@@ -805,8 +767,8 @@ export function CsvImportReview() {
               wide
               serverSide
               pageCount={pageCount}
-              totalRows={filteredRows.length}
-              controlledPagination={{ ...controlledPagination, pageIndex: currentPageIndex }}
+              totalRows={totalRows}
+              controlledPagination={controlledPagination}
               controlledSorting={controlledSorting}
               controlledSearch={stagedSearch ?? ""}
               onPaginationChange={setStagedPagination}
@@ -818,7 +780,7 @@ export function CsvImportReview() {
       </Card>
       <div className="flex justify-end">
         <Button
-          disabled={!isActiveImportReviewable || blockedCount > 0 || lowConfidenceCount > 0 || committableRows.length === 0 || commitImport.isPending}
+          disabled={!isActiveImportReviewable || blockedCount > 0 || lowConfidenceCount > 0 || committableCount === 0 || commitImport.isPending}
           onClick={commitApprovedRows}
         >
           {commitImport.isPending ? <Loader2Icon data-icon="inline-start" className="animate-spin" /> : null}

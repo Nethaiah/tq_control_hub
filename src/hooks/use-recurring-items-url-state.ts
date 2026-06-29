@@ -33,6 +33,7 @@ export type RecurringItemsUrlSetters = {
   resetFilters: () => void
   setCategoryId: (categoryId: string | null) => void
   setDepartmentId: (departmentId: string | null) => void
+  setFilters: (filters: Pick<RecurringItemsUrlState, "categoryId" | "departmentId" | "type">) => void
   setPagination: (pagination: PaginationState) => void
   setSearch: (search: string) => void
   setSorting: (sorting: SortingState) => void
@@ -79,6 +80,15 @@ export function useRecurringItemsUrlState(): [RecurringItemsUrlState, RecurringI
     setValues({ recCategoryId: categoryId, recPage: 1 })
   }
 
+  const setFilters = (filters: Pick<RecurringItemsUrlState, "categoryId" | "departmentId" | "type">) => {
+    setValues({
+      recCategoryId: filters.categoryId,
+      recDepartmentId: filters.departmentId,
+      recPage: 1,
+      recType: filters.type,
+    })
+  }
+
   const resetFilters = () => {
     setValues({
       recCategoryId: null,
@@ -106,6 +116,7 @@ export function useRecurringItemsUrlState(): [RecurringItemsUrlState, RecurringI
       resetFilters,
       setCategoryId,
       setDepartmentId,
+      setFilters,
       setPagination,
       setSearch,
       setSorting,

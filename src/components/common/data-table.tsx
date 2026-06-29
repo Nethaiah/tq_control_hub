@@ -92,6 +92,7 @@ type DataTableProps<TData> = {
   onPaginationChange?: (pagination: PaginationState) => void
   onSortingChange?: (sorting: SortingState) => void
   onSearchChange?: (search: string) => void
+  searchDebounceMs?: number
 }
 
 function alignmentClass(align?: "left" | "center" | "right") {
@@ -258,9 +259,11 @@ export function DataTable<TData>({
   onPaginationChange,
   onSortingChange,
   onSearchChange,
+  searchDebounceMs = 400,
 }: DataTableProps<TData>) {
   const [internalSorting, setInternalSorting] = React.useState<SortingState>([])
   const [internalGlobalFilter, setInternalGlobalFilter] = React.useState("")
+  const [serverSearchDraft, setServerSearchDraft] = React.useState(controlledSearch ?? "")
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({})
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
   const [internalPagination, setInternalPagination] = React.useState<PaginationState>({
@@ -269,8 +272,25 @@ export function DataTable<TData>({
   })
 
   const sorting = serverSide ? (controlledSorting ?? []) : internalSorting
-  const globalFilter = serverSide ? (controlledSearch ?? "") : internalGlobalFilter
+  const appliedServerSearch = controlledSearch ?? ""
+  const globalFilter = serverSide ? serverSearchDraft : internalGlobalFilter
   const pagination = serverSide ? (controlledPagination ?? internalPagination) : internalPagination
+
+  React.useEffect(() => {
+    if (!serverSide) return
+    setServerSearchDraft(appliedServerSearch)
+  }, [appliedServerSearch, serverSide])
+
+  React.useEffect(() => {
+    if (!serverSide || !onSearchChange) return
+    if (serverSearchDraft === appliedServerSearch) return
+
+    const timer = window.setTimeout(() => {
+      onSearchChange(serverSearchDraft)
+    }, searchDebounceMs)
+
+    return () => window.clearTimeout(timer)
+  }, [appliedServerSearch, onSearchChange, searchDebounceMs, serverSearchDraft, serverSide])
 
   const selectionColumn = React.useMemo<ColumnDef<TData>>(
     () => ({
@@ -327,7 +347,7 @@ export function DataTable<TData>({
     onGlobalFilterChange: (updater) => {
       if (serverSide && onSearchChange) {
         const next = typeof updater === "function" ? updater(globalFilter) : updater
-        onSearchChange(next)
+        setServerSearchDraft(next)
       } else {
         setInternalGlobalFilter(updater)
       }
@@ -368,7 +388,7 @@ export function DataTable<TData>({
             onChange={(event) => {
               const value = event.target.value
               if (serverSide && onSearchChange) {
-                onSearchChange(value)
+                setServerSearchDraft(value)
               } else {
                 setInternalGlobalFilter(value)
               }
@@ -409,7 +429,7 @@ export function DataTable<TData>({
               table.resetColumnVisibility()
               table.resetRowSelection()
               if (serverSide && onSearchChange) {
-                onSearchChange("")
+                setServerSearchDraft("")
               } else {
                 setInternalGlobalFilter("")
               }

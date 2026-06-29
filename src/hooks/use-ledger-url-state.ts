@@ -75,17 +75,22 @@ export function useLedgerUrlState(): [LedgerUrlState, LedgerUrlSetters] {
   }
 
   const setFilters = (patch: Partial<TransactionFilters>) => {
+    const next: TransactionFilters = {
+      ...filters,
+      ...patch,
+    }
+
     setValues({
-      categoryId: patch.categoryId ?? null,
-      clientOrVendor: patch.clientOrVendor ?? null,
-      departmentId: patch.departmentId ?? null,
-      from: patch.from ?? null,
-      ids: patch.ids ?? null,
+      categoryId: next.categoryId ?? null,
+      clientOrVendor: next.clientOrVendor ?? null,
+      departmentId: next.departmentId ?? null,
+      from: next.from ?? null,
+      ids: next.ids ?? null,
       page: 1,
-      search: patch.search ?? null,
-      source: patch.source ?? null,
-      to: patch.to ?? null,
-      type: patch.type ?? null,
+      search: next.search ?? null,
+      source: next.source ?? null,
+      to: next.to ?? null,
+      type: next.type ?? null,
     })
   }
 
