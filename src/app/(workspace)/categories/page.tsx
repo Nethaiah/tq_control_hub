@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 
-import { getWorkspaceData } from "@/data/mock-repository"
 import { CategorySettings } from "@/features/categories/components/category-settings"
 
 export const metadata: Metadata = {
@@ -8,7 +7,5 @@ export const metadata: Metadata = {
 }
 
 export default function CategoriesPage() {
-  const data = getWorkspaceData()
-
-  return <CategorySettings categories={data.categories} recurringItems={data.recurringItems} />
+  return <CategorySettings />
 }

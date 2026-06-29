@@ -2,10 +2,11 @@
 
 import * as React from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import type { ColumnDef, Table as TanStackTable } from "@tanstack/react-table"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import type { ColumnDef, PaginationState, SortingState, Table as TanStackTable } from "@tanstack/react-table"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
-import { PlusIcon, RotateCcwIcon, SearchIcon, XIcon } from "lucide-react"
+import { AlertTriangleIcon, Loader2Icon, PlusIcon, RotateCcwIcon, SearchIcon, XIcon } from "lucide-react"
 
 import { DataTable } from "@/components/common/data-table"
 import { DatePicker } from "@/components/common/date-picker"
@@ -38,8 +39,8 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import { amountToUsd, formatCurrency } from "@/domain/currency"
-import { activeFilterCount, filterTransactions } from "@/domain/filters"
+import { formatCurrency } from "@/domain/currency"
+import { activeFilterCount } from "@/domain/filters"
 import { manualTransactionFormSchema } from "@/domain/schemas"
 import type {
   Category,
@@ -49,8 +50,134 @@ import type {
   Transaction,
   TransactionFilters,
 } from "@/domain/types"
-import { useUrlFilters } from "@/hooks/use-url-filters"
+import { useLedgerUrlState } from "@/hooks/use-ledger-url-state"
 import { titleCase } from "@/lib/format"
+
+type LedgerTotals = {
+  revenueUsd: number
+  expenseUsd: number
+  netProfitUsd: number
+  rowCount: number
+  transactionIds: string[]
+}
+
+type LedgerPagination = {
+  page: number
+  pageSize: number
+  totalRows: number
+  totalPages: number
+}
+
+type LedgerData = {
+  categories: Category[]
+  clients: Client[]
+  departments: Department[]
+  rows: Transaction[]
+  totals: LedgerTotals
+  pagination: LedgerPagination
+}
+
+type LedgerApiFilters = TransactionFilters & {
+  page: number
+  pageSize: number
+  sortBy?: string
+  sortDir?: "asc" | "desc"
+}
+
+type ApiResponse<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: { message: string } }
+
+type UpdateTransactionInput = {
+  id: string
+  patch: Partial<Transaction>
+}
+
+type BulkUpdateTransactionInput = {
+  categoryId: string
+  departmentId: string
+  ids: string[]
+  subcategoryId?: string | null
+}
+
+const transactionsQueryKey = (filters: LedgerApiFilters) => ["transactions", filters] as const
+
+async function readApiResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const payload = (await response.json().catch(() => null)) as ApiResponse<T> | null
+
+  if (!response.ok || !payload?.ok) {
+    throw new Error(payload && !payload.ok ? payload.error.message : fallbackMessage)
+  }
+
+  return payload.data
+}
+
+async function fetchLedgerData(filters: LedgerApiFilters) {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== null && value !== "") {
+      params.set(key, String(value))
+    }
+  }
+  const query = params.toString()
+  const response = await fetch(query ? `/api/transactions?${query}` : "/api/transactions", {
+    credentials: "same-origin",
+  })
+
+  return readApiResponse<LedgerData>(response, "Unable to load ledger data")
+}
+
+async function createLedgerTransaction(input: ManualTransactionFormValues) {
+  const response = await fetch("/api/transactions", {
+    body: JSON.stringify({
+      amount: input.amount,
+      categoryId: input.categoryId,
+      clientId: input.clientId || null,
+      currency: input.currency,
+      date: input.date,
+      departmentId: input.departmentId,
+      description: input.description,
+      source: "manual",
+      subcategoryId: input.subcategoryId || null,
+      type: input.type,
+      vendor: input.vendor || null,
+    }),
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  })
+
+  return readApiResponse<{ transaction: Transaction }>(response, "Unable to create transaction")
+}
+
+async function updateLedgerTransaction(input: UpdateTransactionInput) {
+  const response = await fetch(`/api/transactions/${encodeURIComponent(input.id)}`, {
+    body: JSON.stringify(input.patch),
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    method: "PATCH",
+  })
+
+  return readApiResponse<{ transaction: Transaction }>(response, "Unable to update transaction")
+}
+
+async function bulkUpdateLedgerTransactions(input: BulkUpdateTransactionInput) {
+  const response = await fetch("/api/transactions/bulk", {
+    body: JSON.stringify(input),
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    method: "PATCH",
+  })
+
+  return readApiResponse<{ transactions: Transaction[] }>(response, "Unable to bulk update transactions")
+}
+
+function withRows(data: LedgerData, rows: Transaction[]): LedgerData {
+  return {
+    ...data,
+    rows,
+  }
+}
 
 function nameById<T extends { id: string; name: string }>(items: T[], id: string | null) {
   if (!id) {
@@ -172,11 +299,13 @@ function ManualTransactionSheet({
   categories,
   clients,
   onAdd,
+  isAdding,
 }: {
   departments: Department[]
   categories: Category[]
   clients: Client[]
-  onAdd: (transaction: Transaction) => void
+  onAdd: (values: ManualTransactionFormValues) => Promise<void> | void
+  isAdding: boolean
 }) {
   const form = useForm<ManualTransactionFormValues>({
     resolver: zodResolver(manualTransactionFormSchema as never) as never,
@@ -186,8 +315,8 @@ function ManualTransactionSheet({
       description: "",
       amount: 0,
       currency: "USD",
-      departmentId: "dept_operations",
-      categoryId: "cat_exp_software",
+      departmentId: "",
+      categoryId: "",
       subcategoryId: "",
       clientId: "",
       vendor: "",
@@ -198,30 +327,25 @@ function ManualTransactionSheet({
     (category) => category.kind === transactionType && category.parentId === null && !category.archived
   )
 
-  function onSubmit(values: ManualTransactionFormValues) {
-    const transaction: Transaction = {
-      id: `tx_manual_${Date.now()}`,
-      date: values.date,
-      type: values.type,
-      description: values.description,
-      amount: values.amount,
-      currency: values.currency,
-      fxRateToUsd: values.currency === "AED" ? 0.2723 : 1,
-      departmentId: values.departmentId,
-      categoryId: values.categoryId,
-      subcategoryId: values.subcategoryId || null,
-      clientId: values.clientId || null,
-      vendor: values.vendor || null,
-      recurring: false,
-      recurrenceId: null,
-      source: "manual",
-      attachmentUrl: null,
-      createdBy: "owner",
+  React.useEffect(() => {
+    if (!form.getValues("departmentId") && departments[0]) {
+      form.setValue("departmentId", departments[0].id)
     }
+  }, [departments, form])
 
-    onAdd(transaction)
+  React.useEffect(() => {
+    const currentCategoryId = form.getValues("categoryId")
+    const currentCategory = categories.find((category) => category.id === currentCategoryId)
+    const nextCategory = availableCategories[0]
+
+    if ((!currentCategory || currentCategory.kind !== transactionType) && nextCategory) {
+      form.setValue("categoryId", nextCategory.id)
+    }
+  }, [availableCategories, categories, form, transactionType])
+
+  async function onSubmit(values: ManualTransactionFormValues) {
+    await onAdd(values)
     form.reset()
-    toast.success("Transaction added to prototype ledger")
   }
 
   return (
@@ -234,7 +358,7 @@ function ManualTransactionSheet({
         <SheetHeader>
           <SheetTitle>Add transaction</SheetTitle>
           <SheetDescription>
-            Frontend-only entry. The backend will replace this with a server action.
+            Add a revenue or expense row directly to the ledger source of truth.
           </SheetDescription>
         </SheetHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-1 flex-col gap-4 px-6 pb-6">
@@ -293,7 +417,9 @@ function ManualTransactionSheet({
               <FieldLabel>Department</FieldLabel>
               <Select value={form.watch("departmentId")} onValueChange={(value) => form.setValue("departmentId", value ?? "") }>
                 <SelectTrigger className="w-full" aria-label="Department">
-                  <SelectValue />
+                  <span className="line-clamp-1 flex-1 text-left">
+                    {nameById(departments, form.watch("departmentId") || null)}
+                  </span>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
@@ -308,7 +434,9 @@ function ManualTransactionSheet({
               <FieldLabel>Category</FieldLabel>
               <Select value={form.watch("categoryId")} onValueChange={(value) => form.setValue("categoryId", value ?? "") }>
                 <SelectTrigger className="w-full" aria-label="Category">
-                  <SelectValue />
+                  <span className="line-clamp-1 flex-1 text-left">
+                    {nameById(categories, form.watch("categoryId") || null)}
+                  </span>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
@@ -324,7 +452,9 @@ function ManualTransactionSheet({
               {transactionType === "revenue" ? (
                 <Select value={form.watch("clientId") || "none"} onValueChange={(value) => form.setValue("clientId", value === "none" ? "" : (value ?? ""))}>
                   <SelectTrigger className="w-full" aria-label="Client">
-                    <SelectValue />
+                    <span className="line-clamp-1 flex-1 text-left">
+                      {form.watch("clientId") ? nameById(clients, form.watch("clientId") ?? null) : "No client"}
+                    </span>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
@@ -342,7 +472,10 @@ function ManualTransactionSheet({
             </Field>
           </FieldGroup>
           <SheetFooter className="px-0">
-            <Button type="submit">Add transaction</Button>
+            <Button type="submit" disabled={isAdding}>
+              {isAdding ? <Loader2Icon data-icon="inline-start" className="animate-spin" /> : null}
+              Add transaction
+            </Button>
           </SheetFooter>
         </form>
       </SheetContent>
@@ -350,31 +483,152 @@ function ManualTransactionSheet({
   )
 }
 
-export function LedgerWorkspace({
-  rows,
-  departments,
-  categories,
-  clients,
-}: {
-  rows: Transaction[]
-  departments: Department[]
-  categories: Category[]
-  clients: Client[]
-}) {
-  const { filters, setFilters, clearFilter, resetFilters } = useUrlFilters()
-  const [transactions, setTransactions] = React.useState(rows)
-  const [bulkDepartmentId, setBulkDepartmentId] = React.useState<string>("dept_development")
-  const [bulkCategoryId, setBulkCategoryId] = React.useState<string>("cat_exp_software")
-  const filteredRows = React.useMemo(
-    () => filterTransactions(transactions, filters, clients),
-    [transactions, filters, clients]
-  )
-  const revenue = filteredRows
-    .filter((transaction) => transaction.type === "revenue")
-    .reduce((total, transaction) => total + amountToUsd(transaction), 0)
-  const expenses = filteredRows
-    .filter((transaction) => transaction.type === "expense")
-    .reduce((total, transaction) => total + amountToUsd(transaction), 0)
+export function LedgerWorkspace() {
+  const [urlState, urlSetters] = useLedgerUrlState()
+  const { filters, page, pageSize, search: urlSearch, sortBy, sortDir } = urlState
+  const { setFilters, clearFilter, resetFilters, setPagination, setSorting, setSearch } = urlSetters
+  const queryClient = useQueryClient()
+
+  const apiFilters: LedgerApiFilters = {
+    ...filters,
+    page,
+    pageSize,
+    sortBy: sortBy ?? undefined,
+    sortDir: sortDir ?? undefined,
+  }
+
+  const queryKey = transactionsQueryKey(apiFilters)
+  const ledgerQuery = useQuery({
+    queryFn: () => fetchLedgerData(apiFilters),
+    queryKey,
+  })
+  const [bulkDepartmentId, setBulkDepartmentId] = React.useState<string>("")
+  const [bulkCategoryId, setBulkCategoryId] = React.useState<string>("")
+  const [searchInput, setSearchInput] = React.useState(urlSearch ?? "")
+
+  React.useEffect(() => {
+    setSearchInput(urlSearch ?? "")
+  }, [urlSearch])
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchInput !== (urlSearch ?? "")) {
+        setSearch(searchInput)
+      }
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [searchInput, urlSearch, setSearch])
+
+  const data = ledgerQuery.data
+  const departments = data?.departments ?? []
+  const categories = data?.categories ?? []
+  const clients = data?.clients ?? []
+  const pageRows = data?.rows ?? []
+  const transactions = pageRows
+  const revenue = data?.totals.revenueUsd ?? 0
+  const expenses = data?.totals.expenseUsd ?? 0
+  const totalRows = data?.pagination.totalRows ?? 0
+  const totalPages = data?.pagination.totalPages ?? 0
+
+  const createTransactionMutation = useMutation({
+    mutationFn: createLedgerTransaction,
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Unable to add transaction")
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["transactions"] })
+      toast.success("Transaction added")
+    },
+  })
+
+  const updateTransactionMutation = useMutation({
+    mutationFn: updateLedgerTransaction,
+    onError: (error, _input, context: { previous?: LedgerData } | undefined) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKey, context.previous)
+      }
+      toast.error(error instanceof Error ? error.message : "Unable to update transaction")
+    },
+    onMutate: async ({ id, patch }) => {
+      await queryClient.cancelQueries({ queryKey })
+      const previous = queryClient.getQueryData<LedgerData>(queryKey)
+
+      queryClient.setQueryData<LedgerData>(queryKey, (current) =>
+        current
+          ? withRows(
+              current,
+              current.rows.map((transaction) =>
+                transaction.id === id ? { ...transaction, ...patch } : transaction
+              )
+            )
+          : current
+      )
+
+      return { previous }
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["transactions"] })
+    },
+    onSuccess: ({ transaction }) => {
+      queryClient.setQueryData<LedgerData>(queryKey, (current) =>
+        current
+          ? withRows(
+              current,
+              current.rows.map((row) => (row.id === transaction.id ? transaction : row))
+            )
+          : current
+      )
+    },
+  })
+
+  const bulkUpdateMutation = useMutation({
+    mutationFn: bulkUpdateLedgerTransactions,
+    onError: (error, _input, context: { previous?: LedgerData } | undefined) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKey, context.previous)
+      }
+      toast.error(error instanceof Error ? error.message : "Unable to bulk update transactions")
+    },
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey })
+      const previous = queryClient.getQueryData<LedgerData>(queryKey)
+
+      queryClient.setQueryData<LedgerData>(queryKey, (current) =>
+        current
+          ? withRows(
+              current,
+              current.rows.map((transaction) =>
+                input.ids.includes(transaction.id)
+                  ? {
+                      ...transaction,
+                      categoryId: input.categoryId,
+                      departmentId: input.departmentId,
+                      subcategoryId: input.subcategoryId ?? null,
+                    }
+                  : transaction
+              )
+            )
+          : current
+      )
+
+      return { previous }
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["transactions"] })
+    },
+    onSuccess: ({ transactions: updatedTransactions }) => {
+      const updatedById = new Map(updatedTransactions.map((transaction) => [transaction.id, transaction]))
+      queryClient.setQueryData<LedgerData>(queryKey, (current) =>
+        current
+          ? withRows(
+              current,
+              current.rows.map((row) => updatedById.get(row.id) ?? row)
+            )
+          : current
+      )
+      toast.success(`Bulk edited ${updatedTransactions.length} rows`)
+    },
+  })
   const clientVendorOptions = React.useMemo(() => {
     const vendors = Array.from(
       new Set(transactions.map((transaction) => transaction.vendor).filter(Boolean) as string[])
@@ -387,46 +641,52 @@ export function LedgerWorkspace({
   }, [clients, transactions])
 
   React.useEffect(() => {
-    setTransactions(rows)
-  }, [rows])
+    if (!bulkDepartmentId && departments[0]) {
+      setBulkDepartmentId(departments[0].id)
+    }
+  }, [bulkDepartmentId, departments])
+
+  React.useEffect(() => {
+    const rootCategories = categories.filter((category) => category.parentId === null)
+    const defaultCategory = rootCategories.find((category) => category.kind === "expense") ?? rootCategories[0]
+    if (!bulkCategoryId && defaultCategory) {
+      setBulkCategoryId(defaultCategory.id)
+    }
+  }, [bulkCategoryId, categories])
 
   function updateTransaction(id: string, patch: Partial<Transaction>) {
     const previous = transactions.find((transaction) => transaction.id === id)
     if (!previous) return
 
-    setTransactions((current) =>
-      current.map((transaction) => (transaction.id === id ? { ...transaction, ...patch } : transaction))
-    )
+    updateTransactionMutation.mutate({ id, patch })
     toast("Ledger row updated", {
-      description: "Optimistic edit saved in the prototype.",
+      description: "Optimistic edit queued for the backend.",
       action: {
         label: "Undo edit",
         onClick: () => {
-          setTransactions((current) =>
-            current.map((transaction) => (transaction.id === id ? previous : transaction))
-          )
+          updateTransactionMutation.mutate({ id, patch: previous })
         },
       },
     })
   }
 
   function applyBulkEdit(selectedTransactionIds: string[]) {
-    if (selectedTransactionIds.length === 0) return
-    const previous = transactions
-    setTransactions((current) =>
-      current.map((transaction) =>
-        selectedTransactionIds.includes(transaction.id)
-          ? { ...transaction, departmentId: bulkDepartmentId, categoryId: bulkCategoryId }
-          : transaction
-      )
-    )
-    toast.success(`Bulk edited ${selectedTransactionIds.length} rows`, {
-      action: {
-        label: "Undo edit",
-        onClick: () => setTransactions(previous),
-      },
+    if (selectedTransactionIds.length === 0 || !bulkDepartmentId || !bulkCategoryId) return
+
+    bulkUpdateMutation.mutate({
+      categoryId: bulkCategoryId,
+      departmentId: bulkDepartmentId,
+      ids: selectedTransactionIds,
     })
   }
+
+  const controlledPagination: PaginationState = {
+    pageIndex: page - 1,
+    pageSize,
+  }
+  const controlledSorting: SortingState = sortBy
+    ? [{ id: sortBy, desc: sortDir !== "asc" }]
+    : []
 
   const columns = React.useMemo<ColumnDef<Transaction>[]>(() => [
     {
@@ -522,6 +782,7 @@ export function LedgerWorkspace({
     },
     {
       accessorKey: "currency",
+      enableSorting: false,
       header: "Currency",
       cell: ({ row }) => {
         const transaction = row.original
@@ -558,7 +819,7 @@ export function LedgerWorkspace({
             onValueChange={(value) => updateTransaction(transaction.id, { departmentId: value ?? transaction.departmentId })}
           >
             <SelectTrigger className="h-7 w-48" aria-label="Edit department">
-              <SelectValue />
+              <span className="line-clamp-1 flex-1 text-left">{nameById(departments, transaction.departmentId)}</span>
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
@@ -583,7 +844,7 @@ export function LedgerWorkspace({
             onValueChange={(value) => updateTransaction(transaction.id, { categoryId: value ?? transaction.categoryId, subcategoryId: null })}
           >
             <SelectTrigger className="h-7 w-52" aria-label="Edit category">
-              <SelectValue />
+              <span className="line-clamp-1 flex-1 text-left">{nameById(categories, transaction.categoryId)}</span>
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
@@ -598,6 +859,7 @@ export function LedgerWorkspace({
     },
     {
       id: "subcategory",
+      enableSorting: false,
       accessorFn: (row) => nameById(categories, row.subcategoryId),
       header: "Subcategory",
       cell: ({ row }) => {
@@ -608,7 +870,9 @@ export function LedgerWorkspace({
             onValueChange={(value) => updateTransaction(transaction.id, { subcategoryId: !value || value === "none" ? null : value })}
           >
             <SelectTrigger className="h-7 w-48" aria-label="Edit subcategory">
-              <SelectValue />
+              <span className="line-clamp-1 flex-1 text-left">
+                {transaction.subcategoryId ? nameById(categories, transaction.subcategoryId) : "None"}
+              </span>
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
@@ -624,6 +888,7 @@ export function LedgerWorkspace({
     },
     {
       id: "client_vendor",
+      enableSorting: false,
       accessorFn: (row) => row.clientId ? nameById(clients, row.clientId) : row.vendor ?? "",
       header: "Client/vendor",
       cell: ({ row }) => {
@@ -634,7 +899,9 @@ export function LedgerWorkspace({
             onValueChange={(value) => updateTransaction(transaction.id, { clientId: value === "none" ? null : value, vendor: null })}
           >
             <SelectTrigger className="h-7 w-40" aria-label="Edit client">
-              <SelectValue />
+              <span className="line-clamp-1 flex-1 text-left">
+                {transaction.clientId ? nameById(clients, transaction.clientId) : "No client"}
+              </span>
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
@@ -698,6 +965,7 @@ export function LedgerWorkspace({
     },
     {
       accessorKey: "attachmentUrl",
+      enableSorting: false,
       header: "Attachment",
       cell: ({ row }) => {
         const transaction = row.original
@@ -718,14 +986,23 @@ export function LedgerWorkspace({
   ], [categories, clients, departments, transactions])
 
   function LedgerBulkActions(table: TanStackTable<Transaction>) {
-    const selectedIds = table.getSelectedRowModel().rows.map((row) => row.original.id)
+    const selectedRows = table.getSelectedRowModel().rows.map((row) => row.original)
+    const selectedIds = selectedRows.map((row) => row.id)
+    const selectedTypes = new Set(selectedRows.map((row) => row.type))
+    const isMixedTypes = selectedTypes.size > 1
+    const bulkCategoryKind = selectedTypes.size === 1 ? [...selectedTypes][0] : undefined
+    const bulkCategoryOptions = categories.filter(
+      (category) => category.parentId === null && (!bulkCategoryKind || category.kind === bulkCategoryKind)
+    )
 
     return (
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-muted-foreground">Bulk edit selected rows</span>
         <Select value={bulkDepartmentId} onValueChange={(value) => setBulkDepartmentId(value ?? bulkDepartmentId)}>
           <SelectTrigger aria-label="Bulk department" className="w-40">
-            <SelectValue />
+            <span className="line-clamp-1 flex-1 text-left">
+              {nameById(departments, bulkDepartmentId || null)}
+            </span>
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
@@ -736,12 +1013,14 @@ export function LedgerWorkspace({
           </SelectContent>
         </Select>
         <Select value={bulkCategoryId} onValueChange={(value) => setBulkCategoryId(value ?? bulkCategoryId)}>
-          <SelectTrigger aria-label="Bulk category" className="w-48">
-            <SelectValue />
+          <SelectTrigger aria-label="Bulk category" className="w-48" disabled={isMixedTypes}>
+            <span className="line-clamp-1 flex-1 text-left">
+              {isMixedTypes ? "Mixed types" : nameById(categories, bulkCategoryId || null)}
+            </span>
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              {categories.filter((category) => category.parentId === null).map((category) => (
+              {bulkCategoryOptions.map((category) => (
                 <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
               ))}
             </SelectGroup>
@@ -749,7 +1028,7 @@ export function LedgerWorkspace({
         </Select>
         <Button
           variant="outline"
-          disabled={selectedIds.length === 0}
+          disabled={selectedIds.length === 0 || isMixedTypes}
           onClick={() => {
             applyBulkEdit(selectedIds)
             table.resetRowSelection()
@@ -757,6 +1036,27 @@ export function LedgerWorkspace({
         >
           Apply to {selectedIds.length} rows
         </Button>
+        {isMixedTypes && (
+          <span className="text-xs text-muted-foreground">Select rows of the same type to bulk edit</span>
+        )}
+      </div>
+    )
+  }
+
+  if (ledgerQuery.isPending) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+        <Loader2Icon className="size-4 animate-spin" />
+        Loading ledger data...
+      </div>
+    )
+  }
+
+  if (ledgerQuery.isError) {
+    return (
+      <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+        <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" />
+        <div>{ledgerQuery.error instanceof Error ? ledgerQuery.error.message : "Unable to load ledger data."}</div>
       </div>
     )
   }
@@ -865,7 +1165,10 @@ export function LedgerWorkspace({
               departments={departments}
               categories={categories}
               clients={clients}
-              onAdd={(transaction) => setTransactions((current) => [transaction, ...current])}
+              isAdding={createTransactionMutation.isPending}
+              onAdd={async (values) => {
+                await createTransactionMutation.mutateAsync(values)
+              }}
             />
           </div>
           <div className="text-xs text-muted-foreground">
@@ -896,19 +1199,28 @@ export function LedgerWorkspace({
         </div>
         <div className="rounded-lg border bg-card p-4">
           <div className="text-xs text-muted-foreground">Filtered rows</div>
-          <div className="mt-1 text-xl font-semibold">{filteredRows.length}</div>
+          <div className="mt-1 text-xl font-semibold">{totalRows}</div>
           <div className="mt-1 text-xs text-muted-foreground">{activeFilterCount(filters)} active filters</div>
         </div>
       </div>
       <DataTable
-        data={filteredRows}
+        data={pageRows}
         columns={columns}
         getRowId={(row) => row.id}
         enableRowSelection
         wide
-        searchPlaceholder="Search visible ledger rows"
+        serverSide
+        searchPlaceholder="Search ledger rows"
         bulkActions={LedgerBulkActions}
-        initialPageSize={10}
+        pageSizeOptions={[5, 10, 20, 50]}
+        pageCount={totalPages}
+        totalRows={totalRows}
+        controlledPagination={controlledPagination}
+        controlledSorting={controlledSorting}
+        controlledSearch={searchInput}
+        onPaginationChange={setPagination}
+        onSortingChange={setSorting}
+        onSearchChange={setSearchInput}
       />
     </div>
   )

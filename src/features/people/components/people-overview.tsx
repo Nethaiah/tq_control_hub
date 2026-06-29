@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/card"
 import { buildLedgerHref } from "@/domain/filters"
 import type { PeopleMetrics } from "@/domain/metrics"
-import type { Department, Person, Transaction } from "@/domain/types"
+import type { Department, Person, Transaction, TransactionFilters } from "@/domain/types"
 import { formatCurrency, formatPercent } from "@/domain/currency"
 import { formatDate } from "@/lib/format"
 
@@ -39,11 +39,13 @@ export function PeopleOverview({
   departments,
   transactions,
   metrics,
+  filters,
 }: {
   people: Person[]
   departments: Department[]
   transactions: Transaction[]
   metrics: PeopleMetrics
+  filters: TransactionFilters
 }) {
   const maxDepartmentCost = Math.max(
     ...metrics.departmentCosts.map((department) => department.peopleCostUsd),
@@ -99,8 +101,7 @@ export function PeopleOverview({
             className="h-auto p-0"
             render={
               <Link href={buildLedgerHref({
-                from: "2026-06-01",
-                to: "2026-06-30",
+                ...filters,
                 type: "expense",
                 departmentId: person.departmentId,
                 ids: person.transactionIds.join(","),
@@ -115,7 +116,7 @@ export function PeopleOverview({
         )
       },
     },
-  ], [departments, transactions])
+  ], [departments, transactions, filters])
 
   return (
     <PageShell>
@@ -124,7 +125,7 @@ export function PeopleOverview({
         description="People costs, payroll pressure, and headcount by department. Linked payroll rows flow into the same ledger-backed P&L."
         actions={
           <>
-            <Button nativeButton={false} variant="outline" render={<Link href="/ledger?type=expense&categoryId=cat_exp_payroll" />}>
+            <Button nativeButton={false} variant="outline" render={<Link href={buildLedgerHref({ ...filters, type: "expense" })} />}>
               Open payroll rows
               <ArrowRightIcon data-icon="inline-end" />
             </Button>
@@ -156,7 +157,7 @@ export function PeopleOverview({
             <CardAction>
               <LedgerTrace
                 count={metrics.departmentCosts.reduce((count, row) => count + row.transactionIds.length, 0)}
-                filters={{ from: "2026-06-01", to: "2026-06-30", type: "expense", categoryId: "cat_exp_payroll" }}
+                filters={{ ...filters, type: "expense" }}
               />
             </CardAction>
           </CardHeader>
@@ -202,8 +203,7 @@ export function PeopleOverview({
                   <LedgerTrace
                     count={department.transactionIds.length}
                     filters={{
-                      from: "2026-06-01",
-                      to: "2026-06-30",
+                      ...filters,
                       type: "expense",
                       departmentId: department.departmentId,
                       ids: department.transactionIds.join(","),

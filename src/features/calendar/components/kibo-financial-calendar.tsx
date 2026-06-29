@@ -42,27 +42,18 @@ type CalendarFeature = Feature & {
 
 function eventHref(event: CalendarEvent) {
   if (event.transactionId) {
-    return buildLedgerHref({
-      from: "2026-06-01",
-      to: "2026-06-30",
-      ids: event.transactionId,
-    })
+    return buildLedgerHref({ ids: event.transactionId })
   }
 
   if (event.type === "payroll") {
-    return buildLedgerHref({
-      from: "2026-06-01",
-      to: "2026-06-30",
-      type: "expense",
-      categoryId: "cat_exp_payroll",
-    })
+    return buildLedgerHref({ type: "expense" })
   }
 
   if (event.type === "retainer" || event.type === "invoice_due") {
-    return buildLedgerHref({ from: "2026-06-01", to: "2026-06-30", type: "revenue" })
+    return buildLedgerHref({ type: "revenue" })
   }
 
-  return buildLedgerHref({ from: "2026-06-01", to: "2026-06-30" })
+  return buildLedgerHref()
 }
 
 function CalendarStateInitializer() {

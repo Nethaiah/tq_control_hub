@@ -83,6 +83,15 @@ type DataTableProps<TData> = {
   emptyMessage?: string
   wide?: boolean
   className?: string
+  serverSide?: boolean
+  pageCount?: number
+  totalRows?: number
+  controlledPagination?: PaginationState
+  controlledSorting?: SortingState
+  controlledSearch?: string
+  onPaginationChange?: (pagination: PaginationState) => void
+  onSortingChange?: (sorting: SortingState) => void
+  onSearchChange?: (search: string) => void
 }
 
 function alignmentClass(align?: "left" | "center" | "right") {
@@ -119,19 +128,26 @@ function pageNumbers(pageIndex: number, pageCount: number) {
 function DataTablePagination<TData>({
   table,
   pageSizeOptions,
+  totalRows,
+  serverSide,
 }: {
   table: TanStackTable<TData>
   pageSizeOptions: number[]
+  totalRows?: number
+  serverSide?: boolean
 }) {
-  const pageCount = table.getPageCount()
+  const pageCount = serverSide ? table.getPageCount() : table.getPageCount()
   const pageIndex = table.getState().pagination.pageIndex
   const pages = pageNumbers(pageIndex, pageCount)
+  const selectedCount = table.getSelectedRowModel().rows.length
+  const visibleRows = serverSide ? (totalRows ?? 0) : table.getFilteredRowModel().rows.length
 
   return (
     <div className="flex flex-col gap-3 border-t p-3 md:flex-row md:items-center md:justify-between">
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span>
-          {table.getFilteredSelectedRowModel().rows.length} of {table.getFilteredRowModel().rows.length} rows selected
+          {selectedCount > 0 ? `${selectedCount} of ` : ""}
+          {visibleRows} rows
         </span>
         <span>Page {pageCount === 0 ? 0 : pageIndex + 1} of {pageCount}</span>
       </div>
@@ -233,15 +249,28 @@ export function DataTable<TData>({
   emptyMessage = "No rows found.",
   wide = false,
   className,
+  serverSide = false,
+  pageCount: serverPageCount,
+  totalRows,
+  controlledPagination,
+  controlledSorting,
+  controlledSearch,
+  onPaginationChange,
+  onSortingChange,
+  onSearchChange,
 }: DataTableProps<TData>) {
-  const [sorting, setSorting] = React.useState<SortingState>([])
-  const [globalFilter, setGlobalFilter] = React.useState("")
+  const [internalSorting, setInternalSorting] = React.useState<SortingState>([])
+  const [internalGlobalFilter, setInternalGlobalFilter] = React.useState("")
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({})
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
-  const [pagination, setPagination] = React.useState<PaginationState>({
+  const [internalPagination, setInternalPagination] = React.useState<PaginationState>({
     pageIndex: 0,
     pageSize: initialPageSize,
   })
+
+  const sorting = serverSide ? (controlledSorting ?? []) : internalSorting
+  const globalFilter = serverSide ? (controlledSearch ?? "") : internalGlobalFilter
+  const pagination = serverSide ? (controlledPagination ?? internalPagination) : internalPagination
 
   const selectionColumn = React.useMemo<ColumnDef<TData>>(
     () => ({
@@ -255,9 +284,9 @@ export function DataTable<TData>({
       },
       header: ({ table }) => (
         <Checkbox
-          checked={table.getIsAllPageRowsSelected()}
-          onCheckedChange={(checked) => table.toggleAllPageRowsSelected(checked === true)}
-          aria-label="Select page rows"
+          checked={table.getIsAllRowsSelected()}
+          onCheckedChange={(checked) => table.toggleAllRowsSelected(checked === true)}
+          aria-label="Select all rows"
         />
       ),
       cell: ({ row }: { row: Row<TData> }) => (
@@ -287,17 +316,46 @@ export function DataTable<TData>({
       columnVisibility,
       pagination,
     },
-    onSortingChange: setSorting,
-    onGlobalFilterChange: setGlobalFilter,
+    onSortingChange: (updater) => {
+      if (serverSide && onSortingChange) {
+        const next = typeof updater === "function" ? updater(sorting) : updater
+        onSortingChange(next)
+      } else {
+        setInternalSorting(updater)
+      }
+    },
+    onGlobalFilterChange: (updater) => {
+      if (serverSide && onSearchChange) {
+        const next = typeof updater === "function" ? updater(globalFilter) : updater
+        onSearchChange(next)
+      } else {
+        setInternalGlobalFilter(updater)
+      }
+    },
     onRowSelectionChange: setRowSelection,
     onColumnVisibilityChange: setColumnVisibility,
-    onPaginationChange: setPagination,
+    onPaginationChange: (updater) => {
+      if (serverSide && onPaginationChange) {
+        const next = typeof updater === "function" ? updater(pagination) : updater
+        onPaginationChange(next)
+      } else {
+        setInternalPagination(updater)
+      }
+    },
     enableRowSelection,
-    autoResetPageIndex: true,
+    autoResetPageIndex: false,
+    manualPagination: serverSide,
+    manualSorting: serverSide,
+    manualFiltering: serverSide,
+    pageCount: serverSide ? serverPageCount : undefined,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
+    ...(serverSide
+      ? {}
+      : {
+          getSortedRowModel: getSortedRowModel(),
+          getFilteredRowModel: getFilteredRowModel(),
+          getPaginationRowModel: getPaginationRowModel(),
+        }),
   })
 
   return (
@@ -307,7 +365,14 @@ export function DataTable<TData>({
           <SearchIcon className="text-muted-foreground" />
           <Input
             value={globalFilter}
-            onChange={(event) => setGlobalFilter(event.target.value)}
+            onChange={(event) => {
+              const value = event.target.value
+              if (serverSide && onSearchChange) {
+                onSearchChange(value)
+              } else {
+                setInternalGlobalFilter(value)
+              }
+            }}
             placeholder={searchPlaceholder}
             className="max-w-sm"
           />
@@ -343,7 +408,11 @@ export function DataTable<TData>({
               table.resetSorting()
               table.resetColumnVisibility()
               table.resetRowSelection()
-              setGlobalFilter("")
+              if (serverSide && onSearchChange) {
+                onSearchChange("")
+              } else {
+                setInternalGlobalFilter("")
+              }
             }}
           >
             Reset table
@@ -410,7 +479,12 @@ export function DataTable<TData>({
           )}
         </TableBody>
       </Table>
-      <DataTablePagination table={table} pageSizeOptions={pageSizeOptions} />
+      <DataTablePagination
+        table={table}
+        pageSizeOptions={pageSizeOptions}
+        serverSide={serverSide}
+        totalRows={totalRows}
+      />
     </div>
   )
 }

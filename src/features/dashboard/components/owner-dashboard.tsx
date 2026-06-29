@@ -2,11 +2,13 @@
 
 import Link from "next/link"
 import * as React from "react"
+import { useQuery } from "@tanstack/react-query"
 import {
   ArrowDownRightIcon,
   ArrowRightIcon,
   ArrowUpRightIcon,
   MinusIcon,
+  RotateCwIcon,
 } from "lucide-react"
 import type { ColumnDef } from "@tanstack/react-table"
 
@@ -35,9 +37,43 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { buildLedgerHref, exactLedgerFilters } from "@/domain/filters"
+import { buildLedgerHref, exactLedgerFilters, filtersToSearchParams } from "@/domain/filters"
 import type { DashboardMetrics, DepartmentRollup } from "@/domain/metrics"
 import { formatCurrency, formatPercent } from "@/domain/currency"
+import { readApiResponse } from "@/features/metrics/api-client"
+import {
+  useDepartmentPnlUrlState,
+  type DepartmentPnlUrlState,
+} from "@/hooks/use-department-pnl-url-state"
+
+type DepartmentRollupsResponse = {
+  rollups: DepartmentRollup[]
+  pagination: {
+    page: number
+    pageSize: number
+    totalRows: number
+    totalPages: number
+  }
+}
+
+async function fetchDepartmentPnlTable(
+  filters: DashboardMetrics["filters"],
+  state: DepartmentPnlUrlState
+) {
+  const params = filtersToSearchParams(filters)
+  params.set("pnlPage", String(state.page))
+  params.set("pnlPageSize", String(state.pageSize))
+  if (state.search) params.set("pnlSearch", state.search)
+  if (state.sortBy) params.set("pnlSortBy", state.sortBy)
+  if (state.sortDir) params.set("pnlSortDir", state.sortDir)
+
+  const query = params.toString()
+  const response = await fetch(`/api/metrics/departments${query ? `?${query}` : ""}`, {
+    credentials: "same-origin",
+  })
+
+  return readApiResponse<DepartmentRollupsResponse>(response, "Unable to load Department P&L")
+}
 
 function DirectionIcon({ direction }: { direction: "up" | "down" | "flat" }) {
   if (direction === "up") {
@@ -109,8 +145,31 @@ function WeeklyActions({ metrics }: { metrics: DashboardMetrics }) {
   )
 }
 
-function DepartmentPnlTable({ rollups }: { rollups: DepartmentRollup[] }) {
+function DepartmentPnlTable({ rollups, filters }: { rollups: DepartmentRollup[]; filters: DashboardMetrics["filters"] }) {
   const transactionIds = rollups.flatMap((rollup) => rollup.transactionIds)
+  const [tableState, tableSetters] = useDepartmentPnlUrlState()
+  const tableQuery = useQuery({
+    placeholderData: (previousData) => previousData,
+    queryFn: () => fetchDepartmentPnlTable(filters, tableState),
+    queryKey: ["metrics", "departments", "pnl-table", filters, tableState],
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  })
+  const tableData = tableQuery.data?.rollups ?? []
+  const pagination = tableQuery.data?.pagination ?? {
+    page: tableState.page,
+    pageSize: tableState.pageSize,
+    totalPages: 0,
+    totalRows: 0,
+  }
+  const controlledPagination = {
+    pageIndex: Math.max(0, pagination.page - 1),
+    pageSize: pagination.pageSize,
+  }
+  const controlledSorting = tableState.sortBy
+    ? [{ id: tableState.sortBy, desc: tableState.sortDir !== "asc" }]
+    : []
   const columns = React.useMemo<ColumnDef<DepartmentRollup>[]>(() => [
     {
       id: "department",
@@ -126,8 +185,7 @@ function DepartmentPnlTable({ rollups }: { rollups: DepartmentRollup[] }) {
             render={
               <Link
                 href={buildLedgerHref({
-                  from: "2026-06-01",
-                  to: "2026-06-30",
+                  ...filters,
                   departmentId: rollup.department.id,
                   ids: rollup.transactionIds.join(","),
                 })}
@@ -169,7 +227,7 @@ function DepartmentPnlTable({ rollups }: { rollups: DepartmentRollup[] }) {
       meta: { align: "right" },
       cell: ({ row }) => <div className="text-right font-mono tabular-nums">{formatPercent(row.original.budgetUsedPercent)}</div>,
     },
-  ], [])
+  ], [filters])
 
   return (
     <Card>
@@ -179,18 +237,27 @@ function DepartmentPnlTable({ rollups }: { rollups: DepartmentRollup[] }) {
         <CardAction>
           <LedgerTrace
             count={transactionIds.length}
-            filters={exactLedgerFilters({ from: "2026-06-01", to: "2026-06-30" }, transactionIds)}
+            filters={exactLedgerFilters(filters, transactionIds)}
           />
         </CardAction>
       </CardHeader>
       <CardContent>
         <DataTable
-          data={rollups}
+          data={tableData}
           columns={columns}
           getRowId={(row) => row.department.id}
           enableRowSelection
+          serverSide
           searchPlaceholder="Search departments"
-          initialPageSize={5}
+          pageCount={pagination.totalPages}
+          totalRows={pagination.totalRows}
+          controlledPagination={controlledPagination}
+          controlledSearch={tableState.search ?? ""}
+          controlledSorting={controlledSorting}
+          onPaginationChange={tableSetters.setPagination}
+          onSearchChange={tableSetters.setSearch}
+          onSortingChange={tableSetters.setSorting}
+          pageSizeOptions={[5, 10, 20, 50]}
         />
       </CardContent>
     </Card>
@@ -291,7 +358,15 @@ function GrowthEfficiencyPanel({ metrics }: { metrics: DashboardMetrics }) {
   )
 }
 
-export function OwnerDashboard({ metrics }: { metrics: DashboardMetrics }) {
+export function OwnerDashboard({
+  isRefreshing,
+  metrics,
+  onRefresh,
+}: {
+  isRefreshing?: boolean
+  metrics: DashboardMetrics
+  onRefresh?: () => void
+}) {
   const topClient = metrics.topClients[0]
   const recurringKpi = metrics.kpis.find((kpi) => kpi.label === "MRR")
 
@@ -302,6 +377,10 @@ export function OwnerDashboard({ metrics }: { metrics: DashboardMetrics }) {
         description="June is profitable with a clear margin. Development is the heaviest cost base, and marketing spend needs CAC validation."
         actions={
           <>
+            <Button variant="outline" disabled={isRefreshing} onClick={onRefresh}>
+              <RotateCwIcon data-icon="inline-start" className={isRefreshing ? "animate-spin" : undefined} />
+              Refresh data
+            </Button>
             <Button nativeButton={false} variant="outline" render={<Link href="/ledger" />}>
               Open ledger
             </Button>
@@ -394,7 +473,7 @@ export function OwnerDashboard({ metrics }: { metrics: DashboardMetrics }) {
         />
       </div>
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <DepartmentPnlTable rollups={metrics.departmentRollups} />
+        <DepartmentPnlTable rollups={metrics.departmentRollups} filters={metrics.filters} />
         <BudgetActualChart
           data={metrics.budgetVsActual}
           rowCount={metrics.budgetVsActual.reduce((count, row) => count + row.transactionIds.length, 0)}

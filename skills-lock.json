@@ -31,6 +31,12 @@
       "skillPath": "skills/nextjs-developer/SKILL.md",
       "computedHash": "99cc9507d254aa8ce627a4c86755fa0424f19fafb857dc02f7f6e02a086312f8"
     },
+    "nuqs": {
+      "source": "pproenca/dot-skills",
+      "sourceType": "github",
+      "skillPath": "skills/.curated/nuqs/SKILL.md",
+      "computedHash": "bd5d248d0d6d41e337f35d8b834defb9b6feffd47c9966e334c78ac29314b9cf"
+    },
     "shadcn": {
       "source": "shadcn/ui",
       "sourceType": "github",

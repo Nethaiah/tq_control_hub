@@ -1,0 +1,46 @@
+import { z } from "zod"
+
+import { requireAuthContext } from "@/lib/api/auth"
+import { requireOwner } from "@/lib/api/permissions"
+import { apiError, success } from "@/lib/api/responses"
+import { parseBody, parseQuery } from "@/lib/api/validation"
+import { updateTransaction } from "@/lib/db/mutations/transactions"
+
+const paramsSchema = z.object({
+  id: z.uuid(),
+})
+
+const updateTransactionSchema = z.object({
+  amount: z.coerce.number().positive().optional(),
+  attachmentUrl: z.string().trim().min(1).nullable().optional(),
+  categoryId: z.uuid().optional(),
+  clientId: z.uuid().nullable().optional(),
+  currency: z.enum(["USD", "AED"]).optional(),
+  date: z.string().min(1).optional(),
+  departmentId: z.uuid().optional(),
+  description: z.string().trim().min(3).optional(),
+  fxRateToUsd: z.coerce.number().positive().optional(),
+  recurring: z.boolean().optional(),
+  source: z.enum(["manual", "csv", "automation"]).optional(),
+  subcategoryId: z.uuid().nullable().optional(),
+  type: z.enum(["revenue", "expense"]).optional(),
+  vendor: z.string().trim().min(1).nullable().optional(),
+})
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const context = await requireAuthContext()
+    requireOwner(context)
+
+    const { id } = parseQuery(paramsSchema, await params)
+    const body = parseBody(updateTransactionSchema, await request.json().catch(() => ({})))
+    const transaction = await updateTransaction(context, id, body)
+
+    return success({ transaction })
+  } catch (error) {
+    return apiError(error)
+  }
+}

@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 
-import { getWorkspaceData } from "@/data/mock-repository"
 import { CsvImportReview } from "@/features/imports/components/csv-import-review"
 
 export const metadata: Metadata = {
@@ -8,14 +7,5 @@ export const metadata: Metadata = {
 }
 
 export default function ImportsPage() {
-  const data = getWorkspaceData()
-
-  return (
-    <CsvImportReview
-      imports={data.csvImports}
-      rows={data.csvStagedRows}
-      departments={data.departments}
-      categories={data.categories}
-    />
-  )
+  return <CsvImportReview />
 }

@@ -13,10 +13,18 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import { aiQueryFormSchema } from "@/domain/schemas"
 import type { AiQueryFormValues, AiSuggestion } from "@/domain/types"
 import { formatCurrency } from "@/domain/currency"
+import {
+  type AiQueryResult,
+  type AiQuerySourceRow,
+  useAiSuggestions,
+  useRunAiQuery,
+  useUpdateAiSuggestion,
+} from "@/features/insights/hooks/use-ai-insights-queries"
 
 const aiFeatureCopy = {
   briefing: {
@@ -96,34 +104,96 @@ function AiFeaturePanel({
   )
 }
 
-export function AiInsights({
-  suggestions,
-  queryBreakdown,
-}: {
-  suggestions: AiSuggestion[]
-  queryBreakdown: Array<{ category: string; amount: number; transactionIds: string[] }>
-}) {
-  const [items, setItems] = React.useState(suggestions)
-  const [queryVisible, setQueryVisible] = React.useState(true)
+function SourceRows({ rows }: { rows: AiQuerySourceRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-md bg-background p-2 text-xs text-muted-foreground">
+        No ledger rows matched these filters. The answer above does not infer numbers outside the ledger.
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid gap-2">
+      {rows.slice(0, 5).map((row) => (
+        <div key={row.id} className="grid gap-1 rounded-md bg-background p-2 text-xs sm:grid-cols-[6rem_1fr_auto] sm:items-center">
+          <span className="font-mono text-muted-foreground">{row.date}</span>
+          <span>
+            {row.description}
+            <span className="text-muted-foreground"> · {row.department ?? "No department"} · {row.category ?? "No category"}</span>
+          </span>
+          <span className="font-mono font-medium tabular-nums">{formatCurrency(row.amountUsd)}</span>
+        </div>
+      ))}
+      {rows.length > 5 ? (
+        <p className="text-xs text-muted-foreground">Showing 5 of {rows.length} source rows. Open the ledger for the full source set.</p>
+      ) : null}
+    </div>
+  )
+}
+
+export function AiInsights() {
+  const suggestionsQuery = useAiSuggestions()
+  const runQuery = useRunAiQuery()
+  const updateSuggestionMutation = useUpdateAiSuggestion()
+  const [queryResult, setQueryResult] = React.useState<AiQueryResult | null>(null)
+  const [queryVisible, setQueryVisible] = React.useState(false)
   const form = useForm<AiQueryFormValues>({
     resolver: zodResolver(aiQueryFormSchema as never) as never,
     defaultValues: { question: "Show me why development costs are high this month" },
   })
-  const querySuggestion = items.find((item) => item.feature === "natural_language_query")
+  const items = suggestionsQuery.data ?? []
+  const querySuggestion = queryResult?.suggestion ?? items.find((item) => item.feature === "natural_language_query")
+  const queryBreakdown = queryResult?.breakdown ?? []
+  const querySourceRows = queryResult?.sourceRows ?? []
   const briefingItems = items.filter((item) => item.feature === "briefing")
   const forecastItems = items.filter((item) => item.feature === "forecast")
   const ocrItems = items.filter((item) => item.feature === "ocr")
 
   function updateSuggestion(id: string, reviewState: AiSuggestion["reviewState"]) {
-    setItems((current) => current.map((item) => item.id === id ? { ...item, reviewState } : item))
-    toast.success(reviewState === "applied" ? "Suggestion applied" : "Suggestion dismissed")
+    updateSuggestionMutation.mutate({ id, reviewState }, {
+      onSuccess: () => {
+        toast.success(reviewState === "applied" ? "Suggestion applied" : "Suggestion dismissed")
+      },
+      onError: (error) => {
+        toast.error(error instanceof Error ? error.message : "Unable to update suggestion")
+      },
+    })
   }
 
   function onQuery(values: AiQueryFormValues) {
-    setQueryVisible(true)
-    toast.success("Question converted into existing filters", {
-      description: values.question,
+    runQuery.mutate(values.question, {
+      onSuccess: (data) => {
+        setQueryResult(data)
+        setQueryVisible(true)
+        toast.success("Question converted into existing filters", {
+          description: `${data.totals.rowCount} ledger row${data.totals.rowCount === 1 ? "" : "s"} matched`,
+        })
+      },
+      onError: (error) => {
+        toast.error(error instanceof Error ? error.message : "Unable to convert question")
+      },
     })
+  }
+
+  if (suggestionsQuery.isLoading) {
+    return (
+      <PageShell>
+        <PageHeader
+          title="AI insights"
+          description="AI suggestions are drafts with confidence, human review states, and traceability to rows or filters."
+        />
+        <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+          <Skeleton className="h-80 rounded-xl" />
+          <Skeleton className="h-80 rounded-xl" />
+        </div>
+        <div className="grid gap-4 xl:grid-cols-3">
+          <Skeleton className="h-56 rounded-xl" />
+          <Skeleton className="h-56 rounded-xl" />
+          <Skeleton className="h-56 rounded-xl" />
+        </div>
+      </PageShell>
+    )
   }
 
   return (
@@ -144,6 +214,9 @@ export function AiInsights({
             <CardDescription>Imported rows with confidence and human-in-the-loop controls.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
+            {items.filter((item) => item.feature === "categorization" || item.feature === "anomaly").length === 0 ? (
+              <p className="text-sm text-muted-foreground">Upload and categorize CSV rows to create reviewable suggestions.</p>
+            ) : null}
             {items.filter((item) => item.feature === "categorization" || item.feature === "anomaly").map((item) => (
               <div key={item.id} className="rounded-lg border p-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -189,7 +262,9 @@ export function AiInsights({
                   <Textarea id="ai-question" aria-invalid={!!form.formState.errors.question} {...form.register("question")} />
                   <FieldError errors={[form.formState.errors.question]} />
                 </Field>
-                <Button type="submit">Convert to filters</Button>
+                <Button type="submit" disabled={runQuery.isPending}>
+                  {runQuery.isPending ? "Converting..." : "Convert to filters"}
+                </Button>
               </FieldGroup>
             </form>
             {queryVisible && querySuggestion ? (
@@ -202,12 +277,30 @@ export function AiInsights({
                   <Badge variant="outline">{querySuggestion.transactionIds.length} rows</Badge>
                 </div>
                 <div className="mt-3 grid gap-2">
-                  {queryBreakdown.map((row) => (
+                  <p className="rounded-md bg-background p-3 text-sm leading-relaxed">
+                    {queryResult?.answer ?? querySuggestion.summary}
+                  </p>
+                  {queryResult?.comparison ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {[queryResult.comparison.left, queryResult.comparison.right].map((side) => (
+                        <div key={side.label} className="rounded-md bg-background p-3 text-xs">
+                          <div className="font-medium capitalize">{side.label}</div>
+                          <div className="mt-1 text-muted-foreground">{side.totals.rowCount} source rows</div>
+                          <Button nativeButton={false} className="mt-2" variant="outline" size="sm" render={<Link href={`/ledger?${side.filterQuery}`} />}>
+                            <FilterIcon data-icon="inline-start" />
+                            Open {side.label}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {queryBreakdown.length > 0 ? queryBreakdown.map((row) => (
                     <div key={row.category} className="flex items-center justify-between gap-3 rounded-md bg-background p-2 text-xs">
                       <span>{row.category}</span>
                       <span className="font-mono font-medium tabular-nums">{formatCurrency(row.amount)}</span>
                     </div>
-                  ))}
+                  )) : null}
+                  <SourceRows rows={querySourceRows} />
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button nativeButton={false} variant="outline" render={<Link href={`/ledger?${querySuggestion.filterQuery}`} />}>

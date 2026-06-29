@@ -407,6 +407,8 @@ export const csvStagedRows = pgTable(
     suggestedDepartmentId: uuid("suggested_department_id").references(() => departments.id, { onDelete: "set null" }),
     suggestedCategoryId: uuid("suggested_category_id").references(() => categories.id, { onDelete: "set null" }),
     suggestedSubcategoryId: uuid("suggested_subcategory_id").references(() => categories.id, { onDelete: "set null" }),
+    suggestionSource: text("suggestion_source").default("keyword").notNull(),
+    suggestionModel: text("suggestion_model"),
     confidence: numeric("confidence", { precision: 5, scale: 4, mode: "number" }).notNull(),
     reviewState: csvReviewStateEnum("review_state").notNull(),
     ...timestamps,

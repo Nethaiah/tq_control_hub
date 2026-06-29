@@ -26,7 +26,14 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
         } as React.CSSProperties
       }
     >
-      <WorkspaceSidebar variant="inset" />
+      <WorkspaceSidebar
+        variant="inset"
+        user={{
+          name: context.profile.fullName,
+          email: context.profile.email,
+          role: context.membership.role,
+        }}
+      />
       <SidebarInset>
         <Suspense fallback={<div className="min-h-(--header-height) border-b bg-background" />}>
           <WorkspaceHeader />

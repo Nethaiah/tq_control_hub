@@ -9,7 +9,6 @@ import {
   FileSpreadsheetIcon,
   ImportIcon,
   LayoutDashboardIcon,
-  LogOutIcon,
   Settings2Icon,
   SlidersHorizontalIcon,
   UsersIcon,
@@ -28,6 +27,8 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
+import { NavUser } from "./nav-user"
+
 const primaryNavigation = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboardIcon },
   { title: "Ledger", href: "/ledger", icon: FileSpreadsheetIcon },
@@ -40,7 +41,17 @@ const primaryNavigation = [
   { title: "Settings", href: "/settings", icon: Settings2Icon },
 ]
 
-export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
+export function WorkspaceSidebar({
+  user,
+  ...props
+}: React.ComponentProps<typeof Sidebar> & {
+  user: {
+    name: string
+    email: string
+    role: string
+    avatar?: string
+  }
+}) {
   const pathname = usePathname()
 
   return (
@@ -89,20 +100,7 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <div className="rounded-lg border bg-sidebar-accent p-3 text-xs">
-          <div className="font-medium">Owner mode</div>
-          <div className="mt-1 text-muted-foreground">
-            Ledger-backed decisions. AI drafts only.
-          </div>
-        </div>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton render={<Link href="/logout" />}>
-              <LogOutIcon />
-              <span>Sign out</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <NavUser user={user} />
       </SidebarFooter>
     </Sidebar>
   )

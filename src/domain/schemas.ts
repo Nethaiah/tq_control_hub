@@ -149,6 +149,8 @@ export const csvStagedRowSchema = z.object({
   suggestedDepartmentId: z.string().nullable(),
   suggestedCategoryId: z.string().nullable(),
   suggestedSubcategoryId: z.string().nullable(),
+  suggestionModel: z.string().nullable(),
+  suggestionSource: z.enum(["keyword", "openrouter", "manual"]),
   confidence: z.number().min(0).max(1),
   reviewState: z.enum(["approved", "needs_human", "blocked"]),
 })

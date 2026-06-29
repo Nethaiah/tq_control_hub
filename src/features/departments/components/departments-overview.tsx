@@ -15,6 +15,7 @@ import {
 import { ProgressBar } from "@/components/common/progress-bar"
 import { buildLedgerHref } from "@/domain/filters"
 import type { DepartmentRollup } from "@/domain/metrics"
+import type { TransactionFilters } from "@/domain/types"
 import { formatCurrency, formatPercent } from "@/domain/currency"
 
 function TrendIcon({ trend }: { trend: DepartmentRollup["trend"] }) {
@@ -29,7 +30,13 @@ function TrendIcon({ trend }: { trend: DepartmentRollup["trend"] }) {
   return <MinusIcon />
 }
 
-export function DepartmentsOverview({ rollups }: { rollups: DepartmentRollup[] }) {
+export function DepartmentsOverview({
+  rollups,
+  filters,
+}: {
+  rollups: DepartmentRollup[]
+  filters: TransactionFilters
+}) {
   return (
     <PageShell>
       <PageHeader
@@ -81,8 +88,7 @@ export function DepartmentsOverview({ rollups }: { rollups: DepartmentRollup[] }
                 render={
                   <Link
                     href={buildLedgerHref({
-                      from: "2026-06-01",
-                      to: "2026-06-30",
+                      ...filters,
                       departmentId: rollup.department.id,
                     })}
                   />

@@ -6,7 +6,7 @@ This is the backend decision log for the post-frontend implementation phase. It 
 
 ## Current Backend Status
 
-The frontend-only MVP is complete and verified. Backend implementation has not started yet. The next work is to replace mock repositories and local state with persistent Supabase Postgres data, API routes, auth/RLS, server-side aggregation, CSV import persistence, AI integrations, and n8n automation.
+Backend implementation is now underway. The app has a Supabase/Postgres schema managed with Drizzle, migrations, Auth/RLS policy coverage, API route handlers, TanStack Query-backed client workflows, persistent ledger/category/import/AI data paths, CSV staging/commit/reversal, OpenRouter-backed AI categorization/query translation, and audit logging. Remaining backend work is deeper SQL aggregation for all dashboard charts, n8n automation, production external integrations, full recurring generation/proration, and final permission hardening.
 
 ## Chosen Stack
 
