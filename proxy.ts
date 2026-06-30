@@ -16,9 +16,8 @@ export const config = {
      * Match all paths except:
      * - _next/static, _next/image (framework assets)
      * - favicon.ico, image files
-     * - /api/* (API routes handle auth themselves)
      * - /login, /signup, /pending-access, /logout (auth pages don't need session refresh)
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|api/|login|signup|pending-access|logout).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|login|signup|pending-access|logout).*)',
   ],
 }
