@@ -27,6 +27,9 @@ export type DatePickerProps = {
   placeholder?: string
   disabled?: boolean
   className?: string
+  id?: string
+  "aria-label"?: string
+  "aria-invalid"?: boolean
 }
 
 function parseDate(value?: string): Date | undefined {
@@ -49,6 +52,9 @@ export function DatePicker({
   placeholder = "Pick a date",
   disabled = false,
   className,
+  id,
+  "aria-label": ariaLabel,
+  "aria-invalid": ariaInvalid,
 }: DatePickerProps) {
   const [date, setDate] = React.useState<Date | undefined>(() => parseDate(value))
   const [month, setMonth] = React.useState<Date>(() => parseDate(value) ?? new Date())
@@ -92,6 +98,9 @@ export function DatePicker({
             )}
             variant="outline"
             disabled={disabled}
+            id={id}
+            aria-label={ariaLabel}
+            aria-invalid={ariaInvalid}
           >
             <CalendarIcon className="mr-2 size-4" />
             {date ? format(date, "PPP") : <span>{placeholder}</span>}
@@ -108,31 +117,37 @@ export function DatePicker({
                 {props.children}
               </div>
             ),
-            Dropdown: (props) => (
-              <Select
-                onValueChange={(val) => {
-                  if (val && props.onChange) {
-                    handleCalendarChange(val, props.onChange)
-                  }
-                }}
-                value={String(props.value)}
-              >
-                <SelectTrigger className="first:flex-1 last:shrink-0">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {props.options?.map((option) => (
-                    <SelectItem
-                      disabled={option.disabled}
-                      key={option.value}
-                      value={String(option.value)}
-                    >
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ),
+            Dropdown: (props) => {
+              const selectedOption = props.options?.find(
+                (option) => String(option.value) === String(props.value)
+              )
+
+              return (
+                <Select
+                  onValueChange={(val) => {
+                    if (val && props.onChange) {
+                      handleCalendarChange(val, props.onChange)
+                    }
+                  }}
+                  value={String(props.value)}
+                >
+                  <SelectTrigger className="first:flex-1 last:shrink-0">
+                    <SelectValue>{selectedOption?.label}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {props.options?.map((option) => (
+                      <SelectItem
+                        disabled={option.disabled}
+                        key={option.value}
+                        value={String(option.value)}
+                      >
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )
+            },
           }}
           hideNavigation
           mode="single"

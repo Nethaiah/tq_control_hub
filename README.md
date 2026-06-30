@@ -16,7 +16,7 @@ Internal owner cockpit for revenue, expenses, people, departments, CSV imports, 
 - Departments, People, Calendar, Category Settings, Imports, AI Insights, and Settings workspace routes.
 - Supabase/Postgres schema through Drizzle, including organizations, members, departments, categories, clients, people, transactions, recurring items, calendar events, CSV imports/staged rows, AI suggestions, audit logs, and RLS policies.
 - CSV pipeline with header mapping, date/amount/currency validation, duplicate detection, staging review, commit, reverse, confidence, and audit trail.
-- AI features for CSV categorization and natural-language query translation through OpenRouter, with confidence and human-in-loop boundaries.
+- AI features for CSV categorization, natural-language query translation, and receipt/invoice OCR drafts through OpenRouter + LlamaParse, with confidence and human-in-loop boundaries.
 
 ## Known Gaps
 
@@ -24,7 +24,7 @@ Internal owner cockpit for revenue, expenses, people, departments, CSV imports, 
 - Recurring automation is modeled with idempotency keys and run tables, but n8n generation/proration is not complete.
 - FX is stored per transaction for stable USD reporting, but live FX-rate ingestion is not implemented.
 - Owner/staff permissions and RLS exist, but staff/payroll-safe UX needs more production testing.
-- OpenRouter is used as the AI gateway; a direct Claude API client can replace it behind the same AI functions if required.
+- OpenRouter is used as the AI gateway; LlamaParse handles receipt/invoice OCR extraction. A direct Claude API client can replace OpenRouter behind the same AI functions if required.
 
 ## Local Setup
 
@@ -52,7 +52,7 @@ pnpm db:rls-smoke
 1. Start at `/dashboard` for the owner cockpit and drill into ledger-backed numbers.
 2. Open `/ledger` to test stackable URL filters, inline edits, bulk edit, manual entry, and running totals.
 3. Open `/imports` and upload `fixtures/imports/techquarters-june-expenses.csv` to see validation, duplicate handling, human review, commit, and reversal.
-4. Open `/insights` to test AI categorization/query workflows and confidence-gated review.
+4. Open `/insights` to test AI categorization, natural-language query, and receipt/invoice OCR draft workflows with confidence-gated review.
 5. Open `/categories` to review category-as-data, recurring templates, and CSV mapping rules.
 
 ## Stack
@@ -62,5 +62,5 @@ pnpm db:rls-smoke
 - Drizzle ORM for schema, migrations, typed queries, and mutations.
 - TanStack Query for server-state cache, mutations, optimistic updates, and invalidation.
 - TanStack Table for reusable data tables with server-side modes.
-- OpenRouter for AI routing during MVP development.
+- OpenRouter for AI routing during MVP development and LlamaParse for receipt/invoice OCR extraction.
 - n8n is the planned automation runtime for recurring generation, external sync, alerts, and scheduled reports.

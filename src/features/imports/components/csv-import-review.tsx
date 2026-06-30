@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { CheckIcon, FileWarningIcon, Loader2Icon, XIcon } from "lucide-react"
 
 import { DataTable } from "@/components/common/data-table"
+import { DatePicker } from "@/components/common/date-picker"
 import { PageHeader, PageShell } from "@/components/common/page-shell"
 import {
   Dropzone,
@@ -242,15 +243,14 @@ export function CsvImportReview() {
     const disabled = correctionDisabled(row)
 
     return (
-      <Input
+      <DatePicker
         key={`${row.id}-date-${row.parsedDate ?? ""}`}
         aria-label="Correct parsed date"
         className="h-8 w-36 font-mono text-xs"
-        defaultValue={row.parsedDate ?? ""}
         disabled={disabled}
-        type="date"
-        onBlur={(event) => {
-          const value = event.currentTarget.value || null
+        value={row.parsedDate ?? ""}
+        onChange={(nextValue) => {
+          const value = nextValue || null
           if (value !== row.parsedDate) updateCorrection(row, { parsedDate: value })
         }}
       />
@@ -737,11 +737,6 @@ export function CsvImportReview() {
           {isActiveImportCommitted ? (
             <div className="rounded-md border p-4 text-sm text-muted-foreground">
               This import has been committed to the ledger. Staged rows are kept as audit history, but editing/review actions are closed for committed imports.
-            </div>
-          ) : importsQuery.isPending || stagedRowsQuery.isPending ? (
-            <div className="flex items-center gap-2 rounded-md border p-3 text-xs text-muted-foreground">
-              <Loader2Icon className="size-4 animate-spin" />
-              Loading import rows...
             </div>
           ) : (
             <DataTable

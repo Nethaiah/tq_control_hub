@@ -14,6 +14,7 @@ import type {
   departmentSchema,
   integrationSchema,
   manualTransactionFormSchema,
+  personFormSchema,
   personSchema,
   permissionRoleSchema,
   recurringItemSchema,
@@ -39,6 +40,7 @@ export type ManualTransactionFormValues = z.infer<
   typeof manualTransactionFormSchema
 >
 export type CategoryFormValues = z.infer<typeof categoryFormSchema>
+export type PersonFormValues = z.infer<typeof personFormSchema>
 export type CsvMappingFormValues = z.infer<typeof csvMappingFormSchema>
 export type AiQueryFormValues = z.infer<typeof aiQueryFormSchema>
 

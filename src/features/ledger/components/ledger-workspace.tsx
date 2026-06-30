@@ -2,11 +2,11 @@
 
 import * as React from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
 import type { ColumnDef, PaginationState, SortingState, Table as TanStackTable } from "@tanstack/react-table"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
-import { AlertTriangleIcon, Loader2Icon, PlusIcon, RotateCcwIcon, XIcon } from "lucide-react"
+import { Loader2Icon, PlusIcon, RotateCcwIcon, XIcon } from "lucide-react"
 
 import { DataTable } from "@/components/common/data-table"
 import { DatePicker } from "@/components/common/date-picker"
@@ -499,7 +499,7 @@ export function LedgerWorkspace() {
   }
 
   const queryKey = transactionsQueryKey(apiFilters)
-  const ledgerQuery = useQuery({
+  const ledgerQuery = useSuspenseQuery({
     queryFn: () => fetchLedgerData(apiFilters),
     queryKey,
   })
@@ -1072,24 +1072,6 @@ export function LedgerWorkspace() {
         {isMixedTypes && (
           <span className="text-xs text-muted-foreground">Select rows of the same type to bulk edit</span>
         )}
-      </div>
-    )
-  }
-
-  if (ledgerQuery.isPending) {
-    return (
-      <div className="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-        <Loader2Icon className="size-4 animate-spin" />
-        Loading ledger data...
-      </div>
-    )
-  }
-
-  if (ledgerQuery.isError) {
-    return (
-      <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-        <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" />
-        <div>{ledgerQuery.error instanceof Error ? ledgerQuery.error.message : "Unable to load ledger data."}</div>
       </div>
     )
   }

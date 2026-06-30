@@ -2,18 +2,17 @@
 
 import * as React from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
 import type { ColumnDef, PaginationState, SortingState, Table as TanStackTable } from "@tanstack/react-table"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
-import { AlertTriangleIcon, ArchiveIcon, Loader2Icon, PencilIcon, PlusIcon, TrashIcon } from "lucide-react"
+import { ArchiveIcon, Loader2Icon, PencilIcon, PlusIcon, TrashIcon } from "lucide-react"
 
 import { ConfirmDialog, type ConfirmDialogState } from "@/components/common/confirm-dialog"
 import { DataTable } from "@/components/common/data-table"
 import { DatePicker } from "@/components/common/date-picker"
 import { PageHeader, PageShell } from "@/components/common/page-shell"
 import { RenameDialog, type RenameDialogState } from "@/components/common/rename-dialog"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -328,8 +327,8 @@ export function CategorySettings() {
     sortDir: recurringUrlState.sortDir ?? undefined,
     type: recurringUrlState.type ?? undefined,
   }
-  const categoriesQuery = useQuery({ queryFn: fetchCategories, queryKey: categoriesQueryKey })
-  const recurringItemsQuery = useQuery({
+  const categoriesQuery = useSuspenseQuery({ queryFn: fetchCategories, queryKey: categoriesQueryKey })
+  const recurringItemsQuery = useSuspenseQuery({
     queryFn: () => fetchRecurringItems(recurringApiFilters),
     queryKey: recurringItemsQueryKey(recurringApiFilters),
   })
@@ -425,33 +424,6 @@ export function CategorySettings() {
       return next.departmentId === current.departmentId && next.categoryId === current.categoryId ? current : next
     })
   }, [categoriesQuery.data, recurringItemsQuery.data, recurringDraft.categoryId, recurringDraft.departmentId, recurringDraft.type])
-
-  if (categoriesQuery.isPending || recurringItemsQuery.isPending) {
-    return (
-      <PageShell>
-        <PageHeader title="Category settings" description="Manage category taxonomy and recurring item templates." />
-        <div className="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-          <Loader2Icon className="size-4 animate-spin" />
-          Loading category settings...
-        </div>
-      </PageShell>
-    )
-  }
-
-  if (categoriesQuery.isError || recurringItemsQuery.isError) {
-    const error = categoriesQuery.error ?? recurringItemsQuery.error
-
-    return (
-      <PageShell>
-        <PageHeader title="Category settings" description="Manage category taxonomy and recurring item templates." />
-        <Alert variant="destructive">
-          <AlertTriangleIcon className="size-4 shrink-0" />
-          <AlertTitle>Category settings unavailable</AlertTitle>
-          <AlertDescription>{error instanceof Error ? error.message : "Unable to load category settings."}</AlertDescription>
-        </Alert>
-      </PageShell>
-    )
-  }
 
   const categories = categoriesQuery.data.categories
   const recurringData = recurringItemsQuery.data

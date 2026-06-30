@@ -1,14 +1,15 @@
 "use client"
 
 import * as React from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import type { ColumnDef, Table as TanStackTable } from "@tanstack/react-table"
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
+import type { ColumnDef, PaginationState, SortingState, Table as TanStackTable } from "@tanstack/react-table"
 import {
   AlertTriangleIcon,
   BellIcon,
   DatabaseIcon,
   Loader2Icon,
   LockIcon,
+  PlusIcon,
   RepeatIcon,
   SaveIcon,
   ShieldCheckIcon,
@@ -19,6 +20,7 @@ import { toast } from "sonner"
 
 import { DataTable } from "@/components/common/data-table"
 import { PageHeader, PageShell } from "@/components/common/page-shell"
+import { QuerySuspenseBoundary } from "@/components/common/suspense-boundary"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -35,6 +37,8 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { AppSettings, Integration, PermissionRole } from "@/domain/types"
+import { AddPersonDialog, type AddPersonInitialValues } from "@/features/people/components/add-person-dialog"
+import { useSettingsMembersUrlState, type SettingsMembersUrlState } from "@/hooks/use-settings-members-url-state"
 
 type PermissionGuard = {
   area: string
@@ -65,6 +69,12 @@ type SettingsMember = {
 type SettingsMembersData = {
   departments: SettingsDepartment[]
   members: SettingsMember[]
+  pagination: {
+    page: number
+    pageSize: number
+    totalRows: number
+    totalPages: number
+  }
 }
 
 type ApiResponse<T> =
@@ -90,7 +100,8 @@ type BulkMemberPatch = {
   status?: MemberStatus
 }
 
-const settingsMembersQueryKey = ["settings-members"] as const
+const settingsMembersQueryRoot = ["settings-members"] as const
+const settingsMembersQueryKey = (state: SettingsMembersUrlState) => [...settingsMembersQueryRoot, state] as const
 
 async function readApiResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
   const payload = (await response.json().catch(() => null)) as ApiResponse<T> | null
@@ -102,8 +113,16 @@ async function readApiResponse<T>(response: Response, fallbackMessage: string): 
   return payload.data
 }
 
-async function fetchSettingsMembers() {
-  const response = await fetch("/api/settings/members", { credentials: "same-origin" })
+async function fetchSettingsMembers(state: SettingsMembersUrlState) {
+  const params = new URLSearchParams()
+  params.set("membersPage", String(state.page))
+  params.set("membersPageSize", String(state.pageSize))
+  if (state.search) params.set("membersSearch", state.search)
+  if (state.sortBy) params.set("membersSortBy", state.sortBy)
+  if (state.sortDir) params.set("membersSortDir", state.sortDir)
+
+  const query = params.toString()
+  const response = await fetch(`/api/settings/members${query ? `?${query}` : ""}`, { credentials: "same-origin" })
 
   return readApiResponse<SettingsMembersData>(response, "Unable to load member access")
 }
@@ -202,7 +221,7 @@ function MvpNote({ children }: { children: React.ReactNode }) {
 }
 
 function updateMemberInCache(queryClient: ReturnType<typeof useQueryClient>, member: SettingsMember) {
-  queryClient.setQueryData<SettingsMembersData>(settingsMembersQueryKey, (current) =>
+  queryClient.setQueriesData<SettingsMembersData>({ queryKey: settingsMembersQueryRoot }, (current) =>
     current
       ? {
           ...current,
@@ -216,9 +235,10 @@ function updateMemberInCache(queryClient: ReturnType<typeof useQueryClient>, mem
 
 function MemberAccessManager() {
   const queryClient = useQueryClient()
-  const membersQuery = useQuery({
-    queryFn: fetchSettingsMembers,
-    queryKey: settingsMembersQueryKey,
+  const [tableState, tableSetters] = useSettingsMembersUrlState()
+  const membersQuery = useSuspenseQuery({
+    queryFn: () => fetchSettingsMembers(tableState),
+    queryKey: settingsMembersQueryKey(tableState),
   })
   const updateMemberMutation = useMutation({
     mutationFn: updateSettingsMember,
@@ -228,28 +248,14 @@ function MemberAccessManager() {
   })
   const [savingUserIds, setSavingUserIds] = React.useState<Set<string>>(new Set())
 
-  if (membersQuery.isPending) {
-    return (
-      <div className="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-        <Loader2Icon className="size-4 animate-spin" />
-        Loading registered users...
-      </div>
-    )
+  const { departments, members, pagination } = membersQuery.data
+  const controlledPagination: PaginationState = {
+    pageIndex: Math.max(0, pagination.page - 1),
+    pageSize: pagination.pageSize,
   }
-
-  if (membersQuery.isError) {
-    return (
-      <Alert variant="destructive">
-        <AlertTriangleIcon className="size-4 shrink-0" />
-        <AlertTitle>Member access unavailable</AlertTitle>
-        <AlertDescription>
-          {membersQuery.error instanceof Error ? membersQuery.error.message : "Unable to load registered users."}
-        </AlertDescription>
-      </Alert>
-    )
-  }
-
-  const { departments, members } = membersQuery.data
+  const controlledSorting: SortingState = tableState.sortBy
+    ? [{ desc: tableState.sortDir === "desc", id: tableState.sortBy }]
+    : []
 
   if (members.length === 0) {
     return (
@@ -263,6 +269,13 @@ function MemberAccessManager() {
     <MemberAccessTable
       departments={departments}
       members={members}
+      pagination={pagination}
+      controlledPagination={controlledPagination}
+      controlledSearch={tableState.search ?? ""}
+      controlledSorting={controlledSorting}
+      onPaginationChange={tableSetters.setPagination}
+      onSearchChange={tableSetters.setSearch}
+      onSortingChange={tableSetters.setSorting}
       onBulkSave={async (inputs) => {
         const userIds = inputs.map((input) => input.userId)
         setSavingUserIds((current) => new Set([...current, ...userIds]))
@@ -288,7 +301,7 @@ function MemberAccessManager() {
           return next
         })
 
-        await queryClient.invalidateQueries({ queryKey: settingsMembersQueryKey })
+        await queryClient.invalidateQueries({ queryKey: settingsMembersQueryRoot })
 
         if (successCount > 0 && failureCount === 0) {
           toast.success(`Updated ${successCount} ${successCount === 1 ? "member" : "members"}`)
@@ -320,20 +333,44 @@ function MemberAccessManager() {
   )
 }
 
+function MemberAccessFallback() {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+      <Loader2Icon className="size-4 animate-spin" />
+      Loading registered users...
+    </div>
+  )
+}
+
 function MemberAccessTable({
+  controlledPagination,
+  controlledSearch,
+  controlledSorting,
   departments,
   members,
   onBulkSave,
+  onPaginationChange,
   onSave,
+  onSearchChange,
+  onSortingChange,
+  pagination,
   savingUserIds,
 }: {
+  controlledPagination: PaginationState
+  controlledSearch: string
+  controlledSorting: SortingState
   departments: SettingsDepartment[]
   members: SettingsMember[]
   onBulkSave: (inputs: UpdateMemberInput[]) => Promise<boolean>
+  onPaginationChange: (pagination: PaginationState) => void
   onSave: (input: UpdateMemberInput) => Promise<void>
+  onSearchChange: (search: string) => void
+  onSortingChange: (sorting: SortingState) => void
+  pagination: SettingsMembersData["pagination"]
   savingUserIds: Set<string>
 }) {
   const [drafts, setDrafts] = React.useState<Record<string, MemberDraft>>({})
+  const [personInitialValues, setPersonInitialValues] = React.useState<AddPersonInitialValues | null>(null)
 
   React.useEffect(() => {
     setDrafts(Object.fromEntries(members.map((member) => [member.userId, initialDraft(member)])))
@@ -487,17 +524,32 @@ function MemberAccessTable({
         const isSaving = savingUserIds.has(row.original.userId)
 
         return (
-          <Button
-            disabled={isSaving || !isDirty}
-            onClick={() => onSave(inputForMember(row.original))}
-            size="sm"
-          >
-            {isSaving ? <Loader2Icon className="animate-spin" /> : <SaveIcon />}
-            Save
-          </Button>
+          <div className="flex justify-end gap-2">
+            <Button
+              disabled={isSaving || !isDirty}
+              onClick={() => onSave(inputForMember(row.original))}
+              size="sm"
+            >
+              {isSaving ? <Loader2Icon className="animate-spin" /> : <SaveIcon />}
+              Save
+            </Button>
+            <Button
+              onClick={() => setPersonInitialValues({
+                departmentId: draft.role === "staff" && draft.departmentIds.length === 1 ? draft.departmentIds[0] : undefined,
+                name: row.original.fullName,
+                role: draft.role === "owner" ? "Owner" : "Staff",
+              })}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <PlusIcon data-icon="inline-start" />
+              People
+            </Button>
+          </div>
         )
       },
-      meta: { align: "right", className: "w-28" },
+      meta: { align: "right", className: "w-48" },
     },
   ], [departments, drafts, onSave, savingUserIds])
 
@@ -525,25 +577,46 @@ function MemberAccessTable({
   }
 
   return (
-    <DataTable
-      bulkActions={(table) => (
-        <MemberBulkActions
-          departments={departments}
-          onApply={applyBulkPatch}
-          saving={savingUserIds.size > 0}
-          table={table}
-        />
-      )}
-      columns={columns}
-      data={members}
-      emptyMessage="No registered users found."
-      enableRowSelection
-      getRowId={(member) => member.userId}
-      initialPageSize={10}
-      pageSizeOptions={[5, 10, 20, 50]}
-      searchPlaceholder="Search members"
-      wide
-    />
+    <>
+      <DataTable
+        bulkActions={(table) => (
+          <MemberBulkActions
+            departments={departments}
+            onApply={applyBulkPatch}
+            saving={savingUserIds.size > 0}
+            table={table}
+          />
+        )}
+        columns={columns}
+        data={members}
+        emptyMessage="No registered users found."
+        enableRowSelection
+        getRowId={(member) => member.userId}
+        initialPageSize={10}
+        pageSizeOptions={[5, 10, 20, 50]}
+        searchPlaceholder="Search members"
+        serverSide
+        pageCount={pagination.totalPages}
+        totalRows={pagination.totalRows}
+        controlledPagination={controlledPagination}
+        controlledSearch={controlledSearch}
+        controlledSorting={controlledSorting}
+        onPaginationChange={onPaginationChange}
+        onSearchChange={onSearchChange}
+        onSortingChange={onSortingChange}
+        wide
+      />
+      <AddPersonDialog
+        departments={departments}
+        initialValues={personInitialValues ?? undefined}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPersonInitialValues(null)
+          }
+        }}
+        open={personInitialValues !== null}
+      />
+    </>
   )
 }
 
@@ -813,7 +886,14 @@ export function SettingsWorkspace({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <MemberAccessManager />
+          <QuerySuspenseBoundary
+            fallback={<MemberAccessFallback />}
+            errorVariant="block"
+            title="Member access could not load"
+            description="Retry loading registered users."
+          >
+            <MemberAccessManager />
+          </QuerySuspenseBoundary>
         </CardContent>
       </Card>
       <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">

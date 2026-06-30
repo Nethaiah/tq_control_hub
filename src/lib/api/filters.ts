@@ -52,6 +52,26 @@ export const departmentMetricsFilterSchema = metricsFilterSchema.extend({
 
 export type DepartmentMetricsFilter = z.infer<typeof departmentMetricsFilterSchema>
 
+export const peopleMetricsFilterSchema = metricsFilterSchema.extend({
+  peoplePage: z.coerce.number().int().positive().optional(),
+  peoplePageSize: z.coerce.number().int().positive().max(50).optional(),
+  peopleSearch: z.string().optional(),
+  peopleSortBy: z.enum(["name", "department", "role", "type", "costUsd", "startDate", "status"]).optional(),
+  peopleSortDir: z.enum(["asc", "desc"]).optional(),
+})
+
+export type PeopleMetricsFilter = z.infer<typeof peopleMetricsFilterSchema>
+
+export const settingsMembersFilterSchema = z.object({
+  membersPage: z.coerce.number().int().positive().default(1),
+  membersPageSize: z.coerce.number().int().positive().max(100).default(10),
+  membersSearch: z.string().optional(),
+  membersSortBy: z.enum(["user", "access", "role", "status", "departments", "saved_status"]).optional(),
+  membersSortDir: z.enum(["asc", "desc"]).optional(),
+})
+
+export type SettingsMembersFilter = z.infer<typeof settingsMembersFilterSchema>
+
 export const calendarWindowSchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),

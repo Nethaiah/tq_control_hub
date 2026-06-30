@@ -2,8 +2,8 @@
 
 import Link from "next/link"
 import * as React from "react"
-import { ArrowRightIcon, LinkIcon } from "lucide-react"
-import type { ColumnDef } from "@tanstack/react-table"
+import { ArrowRightIcon, LinkIcon, PlusIcon } from "lucide-react"
+import type { ColumnDef, PaginationState, SortingState } from "@tanstack/react-table"
 
 import { DataTable } from "@/components/common/data-table"
 import { HelpDialog } from "@/components/common/help-dialog"
@@ -24,6 +24,7 @@ import { buildLedgerHref } from "@/domain/filters"
 import type { PeopleMetrics } from "@/domain/metrics"
 import type { Department, Person, Transaction, TransactionFilters } from "@/domain/types"
 import { formatCurrency, formatPercent } from "@/domain/currency"
+import { AddPersonDialog } from "@/features/people/components/add-person-dialog"
 import { formatDate } from "@/lib/format"
 
 function departmentName(departments: Department[], departmentId: string) {
@@ -36,17 +37,37 @@ function linkedTransactionRows(transactions: Transaction[], person: Person) {
 
 export function PeopleOverview({
   people,
+  pagination,
+  controlledPagination,
+  controlledSearch,
+  controlledSorting,
+  onPaginationChange,
+  onSearchChange,
+  onSortingChange,
   departments,
   transactions,
   metrics,
   filters,
 }: {
   people: Person[]
+  pagination: {
+    page: number
+    pageSize: number
+    totalRows: number
+    totalPages: number
+  }
+  controlledPagination: PaginationState
+  controlledSearch: string
+  controlledSorting: SortingState
+  onPaginationChange: (pagination: PaginationState) => void
+  onSearchChange: (search: string) => void
+  onSortingChange: (sorting: SortingState) => void
   departments: Department[]
   transactions: Transaction[]
   metrics: PeopleMetrics
   filters: TransactionFilters
 }) {
+  const [addPersonOpen, setAddPersonOpen] = React.useState(false)
   const maxDepartmentCost = Math.max(
     ...metrics.departmentCosts.map((department) => department.peopleCostUsd),
     1
@@ -125,6 +146,10 @@ export function PeopleOverview({
         description="People costs, payroll pressure, and headcount by department. Linked payroll rows flow into the same ledger-backed P&L."
         actions={
           <>
+            <Button onClick={() => setAddPersonOpen(true)}>
+              <PlusIcon data-icon="inline-start" />
+              Add person
+            </Button>
             <Button nativeButton={false} variant="outline" render={<Link href={buildLedgerHref({ ...filters, type: "expense" })} />}>
               Open payroll rows
               <ArrowRightIcon data-icon="inline-end" />
@@ -135,6 +160,7 @@ export function PeopleOverview({
           </>
         }
       />
+      <AddPersonDialog departments={departments} open={addPersonOpen} onOpenChange={setAddPersonOpen} />
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader>
@@ -250,6 +276,15 @@ export function PeopleOverview({
             enableRowSelection
             searchPlaceholder="Search people"
             initialPageSize={10}
+            serverSide
+            pageCount={pagination.totalPages}
+            totalRows={pagination.totalRows}
+            controlledPagination={controlledPagination}
+            controlledSorting={controlledSorting}
+            controlledSearch={controlledSearch}
+            onPaginationChange={onPaginationChange}
+            onSortingChange={onSortingChange}
+            onSearchChange={onSearchChange}
           />
         </CardContent>
       </Card>

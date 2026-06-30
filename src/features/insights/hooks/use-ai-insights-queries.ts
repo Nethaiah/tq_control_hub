@@ -1,8 +1,8 @@
 "use client"
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
 
-import type { AiSuggestion } from "@/domain/types"
+import type { AiSuggestion, Category, Client, Department, ManualTransactionFormValues, Transaction } from "@/domain/types"
 import type { MetricsFilter } from "@/lib/api/filters"
 import type { AiQueryBreakdownRow } from "@/lib/db/queries/ai"
 
@@ -49,6 +49,36 @@ export type AiQueryComparisonSide = {
   totals: AiQueryResult["totals"]
 }
 
+export type OcrDraftResult = {
+  draft: {
+    amount: number | null
+    categoryId: string | null
+    categoryName: string | null
+    currency: "AED" | "USD" | null
+    date: string | null
+    departmentId: string | null
+    departmentName: string | null
+    description: string
+    lineItems?: string[]
+    vendor: string | null
+  }
+  parse: {
+    confidence: number
+    fileId: string | null
+    jobId: string | null
+    pageCount: number
+    provider: string
+    tier: string
+  }
+  suggestion: AiSuggestion
+}
+
+export type OcrLedgerLookups = {
+  categories: Category[]
+  clients: Client[]
+  departments: Department[]
+}
+
 async function readApiResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
   const payload = (await response.json().catch(() => null)) as ApiResponse<T> | null
 
@@ -62,12 +92,23 @@ async function readApiResponse<T>(response: Response, fallbackMessage: string): 
 export const aiSuggestionsQueryKey = ["ai-suggestions"] as const
 
 export function useAiSuggestions() {
-  return useQuery({
+  return useSuspenseQuery({
     queryKey: aiSuggestionsQueryKey,
     queryFn: async () => {
       const response = await fetch("/api/ai/suggestions", { credentials: "same-origin" })
       const data = await readApiResponse<{ suggestions: AiSuggestion[] }>(response, "Unable to load AI suggestions")
       return data.suggestions
+    },
+  })
+}
+
+export function useOcrLedgerLookups() {
+  return useSuspenseQuery({
+    queryKey: ["ocr-ledger-lookups"],
+    queryFn: async () => {
+      const response = await fetch("/api/transactions?page=1&pageSize=1", { credentials: "same-origin" })
+      const data = await readApiResponse<OcrLedgerLookups>(response, "Unable to load ledger fields")
+      return data
     },
   })
 }
@@ -155,6 +196,63 @@ export function useGenerateForecast() {
         data.suggestion,
         ...(current?.filter((item) => item.id !== data.suggestion.id) ?? []),
       ])
+    },
+  })
+}
+
+export function useGenerateOcrDraft() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData()
+      formData.set("file", file)
+
+      const response = await fetch("/api/ai/ocr", {
+        body: formData,
+        credentials: "same-origin",
+        method: "POST",
+      })
+
+      return readApiResponse<OcrDraftResult>(response, "Unable to parse receipt")
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<AiSuggestion[]>(aiSuggestionsQueryKey, (current) => [
+        data.suggestion,
+        ...(current?.filter((item) => item.id !== data.suggestion.id) ?? []),
+      ])
+    },
+  })
+}
+
+export function useCreateOcrLedgerTransaction() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: ManualTransactionFormValues) => {
+      const response = await fetch("/api/transactions", {
+        body: JSON.stringify({
+          amount: input.amount,
+          categoryId: input.categoryId,
+          clientId: null,
+          currency: input.currency,
+          date: input.date,
+          departmentId: input.departmentId,
+          description: input.description,
+          source: "manual",
+          subcategoryId: input.subcategoryId || null,
+          type: "expense",
+          vendor: input.vendor || null,
+        }),
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      })
+
+      return readApiResponse<{ transaction: Transaction }>(response, "Unable to create ledger transaction")
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["transactions"] })
     },
   })
 }

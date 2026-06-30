@@ -1,6 +1,6 @@
 "use client"
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
 
 import type { Category, CsvImport, CsvMappingFormValues, CsvStagedRow, Department, Transaction } from "@/domain/types"
 
@@ -65,7 +65,7 @@ export const stagedRowsQueryKey = (importId: string | null | undefined) => ["imp
 export const stagedRowsQueryOptionsKey = (importId: string | null | undefined, filters: StagedRowsFilters) => [...stagedRowsQueryKey(importId), filters] as const
 
 export function useImportsData() {
-  return useQuery({
+  return useSuspenseQuery({
     queryKey: importsQueryKey,
     queryFn: async () => {
       const response = await fetch("/api/imports", { credentials: "same-origin" })
@@ -75,10 +75,27 @@ export function useImportsData() {
 }
 
 export function useStagedRows(importId: string | null | undefined, filters: StagedRowsFilters) {
-  return useQuery({
-    enabled: Boolean(importId),
+  return useSuspenseQuery({
     queryKey: stagedRowsQueryOptionsKey(importId, filters),
     queryFn: async () => {
+      if (!importId) {
+        return {
+          pagination: {
+            page: filters.page,
+            pageSize: filters.pageSize,
+            totalPages: 0,
+            totalRows: 0,
+          },
+          stagedRows: [],
+          summary: {
+            approvedCount: 0,
+            blockedCount: 0,
+            committableCount: 0,
+            lowConfidenceCount: 0,
+          },
+        } satisfies StagedRowsData
+      }
+
       const params = new URLSearchParams()
 
       for (const [key, value] of Object.entries(filters)) {
@@ -88,7 +105,7 @@ export function useStagedRows(importId: string | null | undefined, filters: Stag
       }
 
       const query = params.toString()
-      const response = await fetch(`/api/imports/${encodeURIComponent(importId!)}/staged-rows${query ? `?${query}` : ""}`, {
+      const response = await fetch(`/api/imports/${encodeURIComponent(importId)}/staged-rows${query ? `?${query}` : ""}`, {
         credentials: "same-origin",
       })
       return readApiResponse<StagedRowsData>(response, "Unable to load staged rows")

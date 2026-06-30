@@ -1,9 +1,11 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 
+import { QuerySuspenseBoundary } from "@/components/common/suspense-boundary"
 import { getSettingsData } from "@/data/mock-repository"
 import { SettingsWorkspace } from "@/features/settings/components/settings-workspace"
 import { getOptionalAuthContext } from "@/lib/api/auth"
+import SettingsLoading from "./loading"
 
 export const metadata: Metadata = {
   title: "Settings / Integrations | Techquarters Management Hub",
@@ -27,10 +29,16 @@ export default async function SettingsPage() {
   const data = getSettingsData()
 
   return (
-    <SettingsWorkspace
-      settings={data.settings}
-      integrations={data.integrations}
-      permissionRoles={data.permissionRoles}
-    />
+    <QuerySuspenseBoundary
+      fallback={<SettingsLoading />}
+      title="Settings could not load"
+      description="Retry loading settings and member access."
+    >
+      <SettingsWorkspace
+        settings={data.settings}
+        integrations={data.integrations}
+        permissionRoles={data.permissionRoles}
+      />
+    </QuerySuspenseBoundary>
   )
 }

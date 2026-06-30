@@ -763,13 +763,105 @@ export async function getDepartmentRollups(
 export type PeopleMetricsResponse = {
   people: Person[]
   departments: Department[]
+  pagination: {
+    page: number
+    pageSize: number
+    totalRows: number
+    totalPages: number
+  }
   transactions: Transaction[]
   metrics: PeopleMetrics
 }
 
+export type PeopleTableOptions = {
+  page?: number
+  pageSize?: number
+  search?: string
+  sortBy?: "name" | "department" | "role" | "type" | "costUsd" | "startDate" | "status"
+  sortDir?: "asc" | "desc"
+}
+
+function personDepartmentName(departments: Department[], departmentId: string) {
+  return departments.find((department) => department.id === departmentId)?.name ?? "Unmapped"
+}
+
+function peopleSortValue(
+  person: Person,
+  departments: Department[],
+  sortBy: NonNullable<PeopleTableOptions["sortBy"]>
+) {
+  if (sortBy === "department") return personDepartmentName(departments, person.departmentId)
+  return person[sortBy]
+}
+
+function applyPeopleTableOptions(
+  peopleRows: Person[],
+  departments: Department[],
+  options: PeopleTableOptions = {}
+) {
+  const search = options.search?.trim().toLowerCase()
+  const sortBy = options.sortBy ?? "name"
+  const sortDir = options.sortDir ?? "asc"
+  const filtered = search
+    ? peopleRows.filter((person) =>
+        [
+          person.name,
+          personDepartmentName(departments, person.departmentId),
+          person.role,
+          person.type,
+          person.status,
+          person.startDate,
+          String(person.costUsd),
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(search)
+      )
+    : peopleRows
+
+  const sorted = [...filtered].sort((a, b) => {
+    const left = peopleSortValue(a, departments, sortBy)
+    const right = peopleSortValue(b, departments, sortBy)
+    const result = typeof left === "number"
+      ? left - Number(right)
+      : String(left).localeCompare(String(right))
+
+    return sortDir === "asc" ? result : -result
+  })
+  const totalRows = sorted.length
+
+  if (!options.pageSize) {
+    return {
+      pagination: {
+        page: 1,
+        pageSize: totalRows,
+        totalPages: totalRows > 0 ? 1 : 0,
+        totalRows,
+      },
+      people: sorted,
+    }
+  }
+
+  const pageSize = options.pageSize
+  const totalPages = Math.ceil(totalRows / pageSize)
+  const page = totalPages === 0 ? 1 : Math.min(options.page ?? 1, totalPages)
+  const offset = (page - 1) * pageSize
+
+  return {
+    pagination: {
+      page,
+      pageSize,
+      totalPages,
+      totalRows,
+    },
+    people: sorted.slice(offset, offset + pageSize),
+  }
+}
+
 export async function getPeopleMetrics(
   context: AuthOrganizationContext,
-  filters?: MetricsFilter
+  filters?: MetricsFilter,
+  tableOptions?: PeopleTableOptions
 ): Promise<PeopleMetricsResponse> {
   const normalizedFilters = filters ? normalizeFilters(filters) : DEFAULT_MONTH_FILTERS
   const isOwner = context.membership?.role === "owner"
@@ -796,11 +888,13 @@ export async function getPeopleMetrics(
     people: allPeople,
     transactions: allOrgTransactions,
   })
+  const peopleTable = applyPeopleTableOptions(visiblePeople, departments, tableOptions)
 
   return {
     departments,
     metrics,
-    people: visiblePeople,
+    pagination: peopleTable.pagination,
+    people: peopleTable.people,
     transactions: allOrgTransactions,
   }
 }

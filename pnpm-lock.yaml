@@ -26,6 +26,9 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.4.0
         version: 5.4.0(react-hook-form@7.80.0(react@19.2.4))
+      '@llamaindex/llama-cloud':
+        specifier: ^2.9.1
+        version: 2.9.1
       '@openrouter/sdk':
         specifier: ^0.13.20
         version: 0.13.20
@@ -1064,6 +1067,9 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@llamaindex/llama-cloud@2.9.1':
+    resolution: {integrity: sha512-xipMm12kbzJe63AySzfCYjfuAQgP/ejm6iXmQLo2NGKi//+dmWHA2NRjOXH8oBnVIRCJ6hCa07CAR9UCbn6sig==}
 
   '@modelcontextprotocol/sdk@1.29.0':
     resolution: {integrity: sha512-zo37mZA9hJWpULgkRpowewez1y6ML5GsXJPY8FI0tBBCd77HEvza4jDqRKOXgHNn867PVGCyTdzqpz0izu5ZjQ==}
@@ -3922,6 +3928,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@llamaindex/llama-cloud@2.9.1': {}
 
   '@modelcontextprotocol/sdk@1.29.0(zod@3.25.76)':
     dependencies:

@@ -61,6 +61,17 @@ export const personSchema = z.object({
   transactionIds: z.array(z.string()).default([]),
 })
 
+export const personFormSchema = z.object({
+  name: z.string().trim().min(2, "Name must be at least 2 characters"),
+  departmentId: z.string().min(1, "Choose a department"),
+  role: z.string().trim().min(2, "Role must be at least 2 characters"),
+  type: z.enum(["employee", "contractor"]),
+  costUsd: z.coerce.number().nonnegative("Cost cannot be negative"),
+  cadence: z.enum(["monthly", "weekly", "hourly"]),
+  startDate: z.string().min(1, "Choose a start date"),
+  status: z.enum(["active", "paused", "offboarded"]),
+})
+
 export const recurringItemSchema = z.object({
   id: z.string(),
   type: transactionTypeSchema,

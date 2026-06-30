@@ -1,11 +1,10 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
+import { useSuspenseQuery } from "@tanstack/react-query"
 import { parseAsString, useQueryStates } from "nuqs"
 
 import { FinancialCalendar } from "@/features/calendar/components/financial-calendar"
 import { readApiResponse } from "@/features/metrics/api-client"
-import { MetricsError, MetricsLoading } from "@/features/metrics/components/metrics-state"
 import type { CalendarMetrics } from "@/domain/metrics"
 
 const DEFAULT_START_DATE = "2026-07-01"
@@ -29,30 +28,11 @@ async function fetchCalendarMetrics(startDate: string, endDate: string) {
 
 export function CalendarWorkspace() {
   const [window] = useQueryStates(windowParsers)
-  const query = useQuery({
+  const query = useSuspenseQuery({
     queryFn: () => fetchCalendarMetrics(window.startDate, window.endDate),
     queryKey: ["metrics", "calendar", window.startDate, window.endDate],
     staleTime: 60_000,
   })
-
-  if (query.isPending) {
-    return (
-      <MetricsLoading
-        description="Upcoming payroll, retainers, invoices, renewals, tax, and reviews generated from recurring items and ledger context."
-        title="Financial calendar"
-      />
-    )
-  }
-
-  if (query.isError || !query.data) {
-    return (
-      <MetricsError
-        description="Upcoming payroll, retainers, invoices, renewals, tax, and reviews generated from recurring items and ledger context."
-        message={query.error instanceof Error ? query.error.message : "Unable to load calendar metrics."}
-        title="Financial calendar"
-      />
-    )
-  }
 
   return <FinancialCalendar metrics={query.data} />
 }

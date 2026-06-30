@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useSuspenseQuery } from "@tanstack/react-query"
 import {
   ArrowDownRightIcon,
   ArrowRightIcon,
@@ -26,6 +26,7 @@ import { HelpDialog } from "@/components/common/help-dialog"
 import { LedgerTrace } from "@/components/common/ledger-trace"
 import { PageHeader, PageShell } from "@/components/common/page-shell"
 import { ProgressBar } from "@/components/common/progress-bar"
+import { QuerySuspenseBoundary } from "@/components/common/suspense-boundary"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -37,6 +38,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 import { buildLedgerHref, exactLedgerFilters, filtersToSearchParams } from "@/domain/filters"
 import type { DashboardMetrics, DepartmentRollup } from "@/domain/metrics"
 import { formatCurrency, formatPercent } from "@/domain/currency"
@@ -148,21 +150,15 @@ function WeeklyActions({ metrics }: { metrics: DashboardMetrics }) {
 function DepartmentPnlTable({ rollups, filters }: { rollups: DepartmentRollup[]; filters: DashboardMetrics["filters"] }) {
   const transactionIds = rollups.flatMap((rollup) => rollup.transactionIds)
   const [tableState, tableSetters] = useDepartmentPnlUrlState()
-  const tableQuery = useQuery({
-    placeholderData: (previousData) => previousData,
+  const tableQuery = useSuspenseQuery({
     queryFn: () => fetchDepartmentPnlTable(filters, tableState),
     queryKey: ["metrics", "departments", "pnl-table", filters, tableState],
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
     staleTime: 0,
   })
-  const tableData = tableQuery.data?.rollups ?? []
-  const pagination = tableQuery.data?.pagination ?? {
-    page: tableState.page,
-    pageSize: tableState.pageSize,
-    totalPages: 0,
-    totalRows: 0,
-  }
+  const tableData = tableQuery.data.rollups
+  const pagination = tableQuery.data.pagination
   const controlledPagination = {
     pageIndex: Math.max(0, pagination.page - 1),
     pageSize: pagination.pageSize,
@@ -259,6 +255,20 @@ function DepartmentPnlTable({ rollups, filters }: { rollups: DepartmentRollup[];
           onSortingChange={tableSetters.setSorting}
           pageSizeOptions={[5, 10, 20, 50]}
         />
+      </CardContent>
+    </Card>
+  )
+}
+
+function DepartmentPnlTableFallback() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Department P&L</CardTitle>
+        <CardDescription>Each department as a mini business.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Skeleton className="h-80 w-full" />
       </CardContent>
     </Card>
   )
@@ -473,7 +483,14 @@ export function OwnerDashboard({
         />
       </div>
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <DepartmentPnlTable rollups={metrics.departmentRollups} filters={metrics.filters} />
+        <QuerySuspenseBoundary
+          fallback={<DepartmentPnlTableFallback />}
+          errorVariant="block"
+          title="Department P&L could not load"
+          description="Retry loading the department table."
+        >
+          <DepartmentPnlTable rollups={metrics.departmentRollups} filters={metrics.filters} />
+        </QuerySuspenseBoundary>
         <BudgetActualChart
           data={metrics.budgetVsActual}
           rowCount={metrics.budgetVsActual.reduce((count, row) => count + row.transactionIds.length, 0)}

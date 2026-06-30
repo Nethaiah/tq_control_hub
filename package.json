@@ -24,6 +24,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^5.4.0",
+    "@llamaindex/llama-cloud": "^2.9.1",
     "@openrouter/sdk": "^0.13.20",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.2",
